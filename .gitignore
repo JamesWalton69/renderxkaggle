@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# App data (sqlite, secrets, outputs)
+data/
+*.db
+*.db-wal
+*.db-shm
+.secret_key
+
+# Env / local
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db

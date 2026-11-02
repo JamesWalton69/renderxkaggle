@@ -1,0 +1,25 @@
+# Render Blueprint — free tier friendly (single web service, no external infra).
+services:
+  - type: web
+    name: kaggle-cloud-manager
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: ADMIN_PASSWORD
+        sync: false        # set this in Render dashboard; if unset a random one is generated
+      - key: KAGGLE_USERNAME
+        sync: false        # optional: prefill Kaggle identity (can also be set in dashboard Settings)
+      - key: KAGGLE_KEY
+        sync: false
+      - key: AI_BASE_URL
+        sync: false        # optional defaults; dashboard Settings can override
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MODEL
+        sync: false
+      - key: POLL_SECONDS
+        value: "6"
