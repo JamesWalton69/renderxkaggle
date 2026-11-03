@@ -27,6 +27,9 @@ android/captures/
 .idea/
 *.iml
 
+# MCP server venv
+mcp/.venv/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -143,6 +143,8 @@ tests/
   test_scheduler.py  test_security.py  test_agent.py  test_worker.py
 android/
   native Android app (Kotlin + Jetpack Compose) — see android/README.md
+mcp/
+  MCP server (agent router) for the manager — see mcp/README.md
 render.yaml          Render blueprint
 requirements.txt     fastapi, uvicorn, httpx, cryptography
 ```
