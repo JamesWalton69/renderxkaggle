@@ -53,6 +53,10 @@ class FakeClient:
         self.calls.append("approvals")
         return [{"id": 3, "tool": "run"}]
 
+    def accounts(self):
+        self.calls.append("accounts")
+        return [{"id": 1, "name": "acc", "username": "u", "has_key": True, "is_default": True}]
+
     def decide_approval(self, approval_id, approve):
         self.calls.append(("decide", approval_id, approve))
         return {"ok": True}
@@ -63,15 +67,16 @@ def test_tools_route_to_client():
     srv._client = lambda: f
 
     assert srv.manager_status()["engine_state"] == "idle"
-    assert srv.list_notebooks()[0]["id"] == 1
+    assert srv.list_notebooks()["items"][0]["id"] == 1
     assert srv.create_notebook("t", "code", "gpu_t4", False)["id"] == 2
     assert srv.run_notebook(5)["job_id"] == 7
     assert srv.run_notebook(5, "why")["job_id"] == 7
-    assert srv.list_jobs("queued")[0]["status"] == "queued"
+    assert srv.list_jobs("queued")["items"][0]["status"] == "queued"
     assert srv.get_job(7)["id"] == 7
     assert srv.stop_or_cancel_job(1)["message"] == "stopping"
     assert srv.requeue_job(2)["ok"] is True
-    assert srv.list_approvals()[0]["id"] == 3
+    assert srv.list_approvals()["items"][0]["id"] == 3
+    assert srv.list_accounts()["items"][0]["is_default"] is True
     assert srv.decide_approval(3, True)["ok"] is True
 
     assert ("create", "t", "gpu_t4", False) in f.calls

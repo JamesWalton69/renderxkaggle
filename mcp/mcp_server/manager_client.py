@@ -101,6 +101,9 @@ class ManagerClient:
     def approvals(self) -> list:
         return self._json("GET", "/api/approvals?status=pending")
 
+    def accounts(self) -> list:
+        return self._json("GET", "/api/accounts")
+
     def decide_approval(self, approval_id: int, approve: bool) -> dict:
         return self._json("POST", f"/api/approvals/{approval_id}/decide", {"approve": approve})
 

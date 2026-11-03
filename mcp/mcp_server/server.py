@@ -55,9 +55,9 @@ def manager_status() -> dict:
 
 
 @mcp.tool()
-def list_notebooks() -> list:
-    """List all notebooks with last-run status."""
-    return _client().notebooks()
+def list_notebooks() -> dict:
+    """List all notebooks with last-run status. Returns {"items": [...]}."""
+    return {"items": _client().notebooks()}
 
 
 @mcp.tool()
@@ -74,10 +74,10 @@ def run_notebook(notebook_id: int, comment: str | None = None) -> dict:
 
 
 @mcp.tool()
-def list_jobs(status: str | None = None, limit: int = 50) -> list:
+def list_jobs(status: str | None = None, limit: int = 50) -> dict:
     """List jobs, optionally filtered by status (queued|running|stopping|success|
-    failed|cancelled|interrupted|uncertain)."""
-    return _client().jobs(status, limit)
+    failed|cancelled|interrupted|uncertain). Returns {"items": [...]}."""
+    return {"items": _client().jobs(status, limit)}
 
 
 @mcp.tool()
@@ -101,9 +101,15 @@ def requeue_job(job_id: int) -> dict:
 
 
 @mcp.tool()
-def list_approvals() -> list:
-    """Pending AI-assistant approvals awaiting a human decision."""
-    return _client().approvals()
+def list_approvals() -> dict:
+    """Pending AI-assistant approvals awaiting a human decision. Returns {"items": [...]}."""
+    return {"items": _client().approvals()}
+
+
+@mcp.tool()
+def list_accounts() -> dict:
+    """Configured Kaggle accounts (name, username, has_key, is_default). Returns {"items": [...]}."""
+    return {"items": _client().accounts()}
 
 
 @mcp.tool()

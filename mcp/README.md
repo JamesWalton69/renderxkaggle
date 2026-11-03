@@ -22,6 +22,10 @@ The server holds the admin password (`ADMIN_PASSWORD` env) and handles login →
 | `requeue_job` | Requeue a terminal job |
 | `list_approvals` | Pending AI-assistant approvals |
 | `decide_approval` | Approve/reject an approval |
+| `list_accounts` | Configured Kaggle accounts (name, username, has_key, default) |
+
+List tools return `{"items": [...]}` (always a JSON object, so empty lists
+survive MCP transport).
 
 The manager's own assistant chat is deliberately not exposed — the connecting
 agent *is* the intelligence; approvals stay gated through the tools above.
