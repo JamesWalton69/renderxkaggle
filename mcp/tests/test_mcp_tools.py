@@ -95,13 +95,29 @@ def test_manager_error_surfaces_detail():
         assert e.status == 409
 
 
-def test_needs_password_env():
-    import os
-    os.environ.pop("ADMIN_PASSWORD", None)
-    srv._inst = None  # clear any cached client
+def test_needs_password_env(monkeypatch):
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    monkeypatch.setattr(srv, "_load_password", lambda: None)
+    srv._inst = None
     srv._client = _FACTORY
     try:
         srv._client()
         assert False, "expected ManagerError"
     except ManagerError as e:
         assert "ADMIN_PASSWORD" in str(e)
+
+
+def test_load_password_prefers_env_over_file(monkeypatch, tmp_path):
+    f = tmp_path / ".env"
+    f.write_text('ADMIN_PASSWORD=from-file\n', encoding="utf-8")
+    monkeypatch.setattr(srv, "_ENV_FILE", f)
+    monkeypatch.setenv("ADMIN_PASSWORD", "from-env")
+    assert srv._load_password() == "from-env"
+
+
+def test_load_password_falls_back_to_env_file(monkeypatch, tmp_path):
+    f = tmp_path / ".env"
+    f.write_text('ADMIN_PASSWORD="from-file"\n', encoding="utf-8")
+    monkeypatch.setattr(srv, "_ENV_FILE", f)
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    assert srv._load_password() == "from-file"

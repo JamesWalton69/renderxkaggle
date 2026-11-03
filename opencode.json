@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "kaggle-manager": {
+        "type": "local",
+        "command": ["E:/Coding/Projects/kagglexrender/mcp/.venv/Scripts/python.exe", "-m", "mcp_server"],
+        "cwd": "mcp",
+        "environment": {
+          "ADMIN_PASSWORD": "{env:ADMIN_PASSWORD}"
+        }
+      }
+    }
+  }
+}

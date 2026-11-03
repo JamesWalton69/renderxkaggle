@@ -1,12 +1,13 @@
 """MCP server exposing the Kaggle Cloud Manager as tools — a router that lets
 any MCP-capable agent run Kaggle work through the manager's REST API.
 
-The server holds the admin credentials (env) and handles login/session
-internally; agents never see the password or cookie.
+The server holds the admin credentials (env or repo-root .env) and handles
+login/session internally; agents never see the password or cookie.
 """
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
@@ -16,11 +17,28 @@ mcp = MCPServer("kaggle-cloud-manager")
 
 _inst: ManagerClient | None = None
 
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+
+def _load_password() -> str | None:
+    """ADMIN_PASSWORD from env, falling back to the repo-root .env (local dev)."""
+    pw = os.environ.get("ADMIN_PASSWORD")
+    if pw:
+        return pw
+    try:
+        for line in _ENV_FILE.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("ADMIN_PASSWORD="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return None
+
 
 def _client() -> ManagerClient:
     global _inst
     if _inst is None:
-        password = os.environ.get("ADMIN_PASSWORD")
+        password = _load_password()
         if not password:
             raise ManagerError(0, "ADMIN_PASSWORD env var is not set")
         _inst = ManagerClient(
