@@ -51,13 +51,13 @@ const UI = {
     return `<span class="badge badge-${cls}">${this.esc(label || status)}</span>`;
   },
 
-  toast(message, type = "ok") {
+  toast(message, type = "ok", duration = 3600) {
     const root = document.getElementById("toast-root");
     const el = document.createElement("div");
     el.className = `toast ${type === "ok" ? "" : type}`;
     el.innerHTML = this.esc(message);
     root.appendChild(el);
-    setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .3s"; setTimeout(() => el.remove(), 320); }, 3600);
+    setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .3s"; setTimeout(() => el.remove(), 320); }, duration);
   },
 
   modal({ title, body, footer, wide }) {

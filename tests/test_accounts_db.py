@@ -145,6 +145,34 @@ class AccountsDbTestCase(unittest.TestCase):
             self.assertTrue(data2["ok"])
             self.assertEqual(data2["username"], "raw_user")
 
+    def test_extract_kaggle_credentials(self):
+        from app.kaggle_client import extract_kaggle_credentials
+
+        # 1. Clean username and key
+        u, k = extract_kaggle_credentials("user1", "key1")
+        self.assertEqual((u, k), ("user1", "key1"))
+
+        # 2. Quotes and whitespace
+        u, k = extract_kaggle_credentials(' "myuser" ', " 'mykey' ")
+        self.assertEqual((u, k), ("myuser", "mykey"))
+
+        # 3. Raw kaggle.json content in key field
+        raw_json = '{"username": "json_user", "key": "0123456789abcdef0123456789abcdef"}'
+        u, k = extract_kaggle_credentials("", raw_json)
+        self.assertEqual((u, k), ("json_user", "0123456789abcdef0123456789abcdef"))
+
+        # 4. Swapped fields (key is 32-hex, username is not)
+        u, k = extract_kaggle_credentials("0123456789abcdef0123456789abcdef", "real_user")
+        self.assertEqual((u, k), ("real_user", "0123456789abcdef0123456789abcdef"))
+
+        # 5. user:key format
+        u, k = extract_kaggle_credentials("", "inline_user:inline_key")
+        self.assertEqual((u, k), ("inline_user", "inline_key"))
+
+        # 6. Bearer / Basic prefix
+        u, k = extract_kaggle_credentials("myuser", "Bearer secret_token")
+        self.assertEqual((u, k), ("myuser", "secret_token"))
+
 
 if __name__ == "__main__":
     unittest.main()

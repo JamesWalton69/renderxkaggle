@@ -509,30 +509,28 @@ def _clean_str(val: Any) -> str:
     return s
 
 
+def _format_kaggle_auth_error(username: str, err_msg: str) -> str:
+    msg = str(err_msg).strip()
+    if any(k in msg.lower() for k in ("unauthenticated", "unauthorized")):
+        return (
+            f"Kaggle authentication failed for @{username}. "
+            "Please check that your Kaggle username and API key are correct. "
+            "To get a valid API key: log in to kaggle.com, go to Account Settings -> API -> 'Create New Token', "
+            "and copy the 'key' value from the downloaded kaggle.json (do NOT use your Kaggle account password)."
+        )
+    return msg
+
+
 def _parse_account_payload(body: dict) -> tuple[str, str, str]:
+    from .kaggle_client import extract_kaggle_credentials
     raw_name = _clean_str(body.get("name", ""))
-    raw_user = _clean_str(body.get("username", ""))
-    raw_key = _clean_str(body.get("api_key", body.get("key", "")))
+    raw_user = body.get("username", "")
+    raw_key = body.get("api_key", body.get("key", ""))
 
-    for candidate in (raw_key, raw_user):
-        if candidate.startswith("{") and candidate.endswith("}"):
-            try:
-                parsed = json.loads(candidate)
-                if isinstance(parsed, dict):
-                    if "key" in parsed and (raw_key == candidate or not raw_key):
-                        raw_key = _clean_str(parsed["key"])
-                    if "username" in parsed and (raw_user == candidate or not raw_user):
-                        raw_user = _clean_str(parsed["username"])
-            except Exception:
-                pass
-
-    raw_name = _clean_str(raw_name)
-    raw_user = _clean_str(raw_user)
-    raw_key = _clean_str(raw_key)
-
+    clean_user, clean_key = extract_kaggle_credentials(raw_user, raw_key)
     if not raw_name:
-        raw_name = raw_user or "Kaggle Account"
-    return raw_name, raw_user, raw_key
+        raw_name = clean_user or "Kaggle Account"
+    return raw_name, clean_user, clean_key
 
 
 @app.get("/api/accounts", dependencies=[Depends(require_auth)])
@@ -550,7 +548,8 @@ def verify_account_credentials(body: dict):
         return {"ok": True, "username": username, "status": "valid", "notebooks_count": len(items)}
     except Exception as exc:
         msg = getattr(exc, "message", str(exc))
-        return {"ok": False, "username": username, "error": msg}
+        formatted = _format_kaggle_auth_error(username, msg)
+        return {"ok": False, "username": username, "error": formatted}
 
 
 @app.get("/api/accounts/{aid}/verify", dependencies=[Depends(require_auth)])
@@ -566,7 +565,8 @@ def verify_account(aid: int):
         return {"ok": True, "username": account.get("username"), "status": "valid", "notebooks_count": len(items)}
     except Exception as exc:
         msg = getattr(exc, "message", str(exc))
-        return {"ok": False, "username": account.get("username"), "error": msg}
+        formatted = _format_kaggle_auth_error(account.get("username", ""), msg)
+        return {"ok": False, "username": account.get("username"), "error": formatted}
 
 
 @app.post("/api/accounts", dependencies=[Depends(require_auth)])

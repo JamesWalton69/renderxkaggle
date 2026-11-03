@@ -221,6 +221,7 @@ def list_accounts() -> list[dict]:
 
 def get_account(account_id) -> Optional[dict]:
     """Return decrypted credentials for an account, falling back to env."""
+    from .kaggle_client import extract_kaggle_credentials
     if account_id is not None:
         try:
             row = fetch_one(
@@ -229,10 +230,11 @@ def get_account(account_id) -> Optional[dict]:
             if row:
                 from . import security
                 try:
-                    key = security.decrypt_secret(row["key_enc"])
+                    raw_key = security.decrypt_secret(row["key_enc"])
                 except Exception:
-                    key = ""
-                return {"id": row["id"], "name": row["name"], "username": row["username"], "key": key}
+                    raw_key = ""
+                uname, clean_key = extract_kaggle_credentials(row["username"], raw_key)
+                return {"id": row["id"], "name": row["name"], "username": uname, "key": clean_key}
         except Exception:
             pass
     else:
@@ -245,17 +247,25 @@ def get_account(account_id) -> Optional[dict]:
             if row:
                 from . import security
                 try:
-                    key = security.decrypt_secret(row["key_enc"])
+                    raw_key = security.decrypt_secret(row["key_enc"])
                 except Exception:
-                    key = ""
-                return {"id": row["id"], "name": row["name"], "username": row["username"], "key": key}
+                    raw_key = ""
+                uname, clean_key = extract_kaggle_credentials(row["username"], raw_key)
+                return {"id": row["id"], "name": row["name"], "username": uname, "key": clean_key}
         except Exception:
             pass
-    return config.get_account(account_id)
+    acc = config.get_account(account_id)
+    if acc:
+        u, k = extract_kaggle_credentials(acc.get("username"), acc.get("key"))
+        acc["username"] = u
+        acc["key"] = k
+    return acc
 
 
 def add_account(name: str, username: str, key: str) -> int:
     from . import security
+    from .kaggle_client import extract_kaggle_credentials
+    username, key = extract_kaggle_credentials(username, key)
     has_any = fetch_one("SELECT 1 FROM kaggle_accounts LIMIT 1")
     is_default = 1 if not has_any else 0
     return execute(
@@ -266,6 +276,9 @@ def add_account(name: str, username: str, key: str) -> int:
 
 
 def update_account(account_id: int, name: str = "", username: str = "", key: str = "") -> None:
+    from .kaggle_client import extract_kaggle_credentials
+    if username or key:
+        username, key = extract_kaggle_credentials(username, key)
     updates, values = [], []
     if name:
         updates.append("name=%s")

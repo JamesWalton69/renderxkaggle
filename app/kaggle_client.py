@@ -63,6 +63,60 @@ ACCELERATORS: dict[str, tuple[str, bool, bool]] = {
 PUSH_CONFLICT_RETRY_DELAYS = (5, 10, 20)
 
 
+def extract_kaggle_credentials(username: Any, key: Any) -> tuple[str, str]:
+    """Robustly extract and clean Kaggle username and API key from inputs or stored values."""
+    u = str(username or "").strip()
+    k = str(key or "").strip()
+
+    # 1. Parse JSON if present in either field (e.g. raw contents of kaggle.json)
+    for raw in (k, u):
+        if not raw:
+            continue
+        cand = raw.strip()
+        if (cand.startswith('"') and cand.endswith('"')) or (cand.startswith("'") and cand.endswith("'")):
+            cand = cand[1:-1].strip()
+        if "{" in cand and "}" in cand:
+            try:
+                start = cand.find("{")
+                end = cand.rfind("}") + 1
+                data = json.loads(cand[start:end])
+                if isinstance(data, dict):
+                    if data.get("key") and (k == raw or not k or "{" in k):
+                        k = str(data["key"]).strip()
+                    if data.get("username") and (u == raw or not u or "{" in u):
+                        u = str(data["username"]).strip()
+            except Exception:
+                pass
+
+    # 2. Strip enclosing quotes
+    for _ in range(2):
+        if (u.startswith('"') and u.endswith('"')) or (u.startswith("'") and u.endswith("'")):
+            u = u[1:-1].strip()
+        if (k.startswith('"') and k.endswith('"')) or (k.startswith("'") and k.endswith("'")):
+            k = k[1:-1].strip()
+
+    # 3. Strip auth scheme prefixes
+    if k.lower().startswith("bearer "):
+        k = k[7:].strip()
+    elif k.lower().startswith("basic "):
+        k = k[6:].strip()
+
+    # 4. Check for user:key format
+    if ":" in k and not any(k.startswith(p) for p in ("http://", "https://", "{")):
+        parts = k.split(":", 1)
+        if len(parts) == 2 and parts[0] and parts[1]:
+            if not u or u == parts[0]:
+                u = parts[0].strip()
+                k = parts[1].strip()
+
+    # 5. Swap if fields are reversed (key is 32-hex, username is not)
+    if len(u) == 32 and all(c in "0123456789abcdefABCDEF" for c in u):
+        if not (len(k) == 32 and all(c in "0123456789abcdefABCDEF" for c in k)):
+            u, k = k, u
+
+    return u, k
+
+
 def _extract_ref(text: str) -> Optional[str]:
     m = re.search(r"kaggle\.com/code/([\w\-]+)/([\w\-]+)", text or "")
     if m:
@@ -132,18 +186,17 @@ class KaggleFacade:
     # ------------------------------------------------------------------ auth
 
     def _auth(self, account: Optional[dict] = None) -> tuple:
-        def _clean(val: Any) -> str:
-            v = str(val or "").strip()
-            if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
-                v = v[1:-1].strip()
-            return v
-
         if account and account.get("username") and account.get("key"):
-            return ("basic", _clean(account["username"]), _clean(account["key"]))
+            u, k = extract_kaggle_credentials(account["username"], account["key"])
+            return ("basic", u, k)
         s = self._settings()
-        u = _clean(s.get("kaggle_username") or os.environ.get("KAGGLE_USERNAME", ""))
-        k = _clean(s.get("kaggle_key") or os.environ.get("KAGGLE_KEY", ""))
-        tok = _clean(os.environ.get("KAGGLE_API_TOKEN", ""))
+        u, k = extract_kaggle_credentials(
+            s.get("kaggle_username") or os.environ.get("KAGGLE_USERNAME", ""),
+            s.get("kaggle_key") or os.environ.get("KAGGLE_KEY", ""),
+        )
+        tok = str(os.environ.get("KAGGLE_API_TOKEN", "")).strip()
+        if (tok.startswith('"') and tok.endswith('"')) or (tok.startswith("'") and tok.endswith("'")):
+            tok = tok[1:-1].strip()
         if not u or not k:
             if tok:
                 return ("bearer", "", tok)
@@ -327,7 +380,13 @@ class KaggleFacade:
     def get_status(self, ref: str, account: Optional[dict] = None) -> dict:
         user, slug = ref.split("/", 1)
         resp = self._client(self._auth(account)).get(
-            "/kernels/status", params={"user": user, "kernel": slug}
+            "/kernels/status",
+            params={
+                "userName": user,
+                "kernelSlug": slug,
+                "user": user,
+                "kernel": slug,
+            },
         )
         self._raise_for(resp)
         data = resp.json() or {}
@@ -339,23 +398,46 @@ class KaggleFacade:
 
     def get_logs(self, ref: str, account: Optional[dict] = None) -> str:
         user, slug = ref.split("/", 1)
-        resp = self._client(self._auth(account)).get(
-            "/kernels/log", params={"user": user, "kernel": slug}
+        auth = self._auth(account)
+        resp = self._client(auth).get(
+            "/kernels/log",
+            params={
+                "userName": user,
+                "kernelSlug": slug,
+                "user": user,
+                "kernel": slug,
+            },
         )
-        self._raise_for(resp)
         try:
+            self._raise_for(resp)
             data = resp.json()
             if isinstance(data, dict):
-                return data.get("logs") or json.dumps(data)
+                return data.get("logs") or data.get("log") or json.dumps(data)
             return resp.text
         except Exception:
+            try:
+                rpc_resp = self._client(auth).post(
+                    "https://api.kaggle.com/v1/kernels.KernelsApiService/ListKernelSessionOutput",
+                    json={"userName": user, "kernelSlug": slug},
+                )
+                if rpc_resp.status_code == 200:
+                    rdata = rpc_resp.json()
+                    return rdata.get("log") or ""
+            except Exception:
+                pass
             return resp.text
 
     def download_output(self, ref: str, dest_dir: Path,
                         account: Optional[dict] = None) -> list[str]:
         user, slug = ref.split("/", 1)
         resp = self._client(self._auth(account)).get(
-            "/kernels/output", params={"user": user, "kernel": slug}
+            "/kernels/output",
+            params={
+                "userName": user,
+                "kernelSlug": slug,
+                "user": user,
+                "kernel": slug,
+            },
         )
         self._raise_for(resp)
         dest_dir = Path(dest_dir)

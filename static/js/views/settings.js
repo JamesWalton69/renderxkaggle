@@ -48,9 +48,17 @@ window.Views.settings = {
               <div class="field"><label>Account name</label><input id="acc-name" placeholder="e.g. Primary"></div>
               <div class="field"><label>Kaggle username</label><input id="acc-user" placeholder="e.g. arydds34df"></div>
             </div>
-            <div class="field"><label>API key</label><input id="acc-key" type="password" placeholder="••••••••" autocomplete="new-password"></div>
-            <button class="btn btn-primary" id="acc-add" type="button">＋ Add account</button>
-            <div class="form-error" id="acc-err"></div>
+            <div class="field">
+              <label>API key</label>
+              <input id="acc-key" type="password" placeholder="32-char key or paste kaggle.json content" autocomplete="new-password">
+              <div style="color:var(--faint);font-size:11.5px;margin-top:4px">
+                From downloaded <span class="mono">kaggle.json</span> (<a href="https://www.kaggle.com/settings" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">kaggle.com/settings</a> → <em>Create New Token</em>). Do not use your Kaggle login password.
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+              <button class="btn btn-primary" id="acc-add" type="button">＋ Add account</button>
+            </div>
+            <div class="form-error" id="acc-err" style="margin-top:8px"></div>
           </div>
           <p style="color:var(--faint);font-size:12px;margin-top:14px">Accounts are stored durably in Neon Postgres. API keys are encrypted at rest with AES-GCM. Select which account runs each notebook in the notebook editor.</p>
         </div>
@@ -76,6 +84,33 @@ window.Views.settings = {
         </div>
       </div>`;
 
+    const tryAutoFill = (text) => {
+      if (!text || !text.includes("{") || !text.includes("}")) return;
+      try {
+        const start = text.indexOf("{");
+        const end = text.lastIndexOf("}") + 1;
+        const obj = JSON.parse(text.slice(start, end));
+        if (obj && typeof obj === "object") {
+          if (obj.username) {
+            const uField = document.getElementById("acc-user");
+            if (uField) uField.value = obj.username;
+            const nField = document.getElementById("acc-name");
+            if (nField && !nField.value) nField.value = obj.username;
+          }
+          if (obj.key) {
+            const kField = document.getElementById("acc-key");
+            if (kField) kField.value = obj.key;
+          }
+          UI.toast("Auto-filled from kaggle.json");
+        }
+      } catch (e) {}
+    };
+
+    const keyInput = root.querySelector("#acc-key");
+    const userInput = root.querySelector("#acc-user");
+    if (keyInput) keyInput.oninput = (e) => tryAutoFill(e.target.value);
+    if (userInput) userInput.oninput = (e) => tryAutoFill(e.target.value);
+
     root.querySelector("#acc-add").onclick = () => this._addAccount(root);
     root.querySelectorAll("[data-act]").forEach((btn) => {
       btn.onclick = () => {
@@ -97,10 +132,10 @@ window.Views.settings = {
       if (res.ok) {
         UI.toast(`Account @${res.username} is valid (${res.notebooks_count} notebooks found)`);
       } else {
-        UI.toast(`Verification failed for @${res.username}: ${res.error}`, "error");
+        UI.toast(res.error, "error", 8000);
       }
     } catch (e) {
-      UI.toast(e.message, "error");
+      UI.toast(e.message, "error", 8000);
     } finally {
       btn.textContent = orig;
       btn.disabled = false;
@@ -112,17 +147,30 @@ window.Views.settings = {
     const username = document.getElementById("acc-user").value.trim();
     const key = document.getElementById("acc-key").value.trim();
     const err = document.getElementById("acc-err");
+    const btn = document.getElementById("acc-add");
     err.textContent = "";
-    if (!name || !username || !key) {
-      err.textContent = "Name, Kaggle username, and API key are required.";
+    if (!username || !key) {
+      err.textContent = "Kaggle username and API key are required.";
       return;
     }
+    const orig = btn.textContent;
+    btn.textContent = "Verifying & Adding...";
+    btn.disabled = true;
     try {
-      await API.post("/api/accounts", { name, username, api_key: key });
-      UI.toast("Account added successfully");
+      const v = await API.post("/api/accounts/verify", { username, key });
+      if (!v.ok) {
+        err.textContent = v.error || "Failed to authenticate with Kaggle.";
+        btn.textContent = orig;
+        btn.disabled = false;
+        return;
+      }
+      await API.post("/api/accounts", { name: name || username, username, api_key: key });
+      UI.toast(`Account @${username} added and verified successfully!`);
       this._load(root);
     } catch (e) {
       err.textContent = e.message;
+      btn.textContent = orig;
+      btn.disabled = false;
     }
   },
 
