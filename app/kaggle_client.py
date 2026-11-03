@@ -65,7 +65,20 @@ PUSH_CONFLICT_RETRY_DELAYS = (5, 10, 20)
 
 def _extract_ref(text: str) -> Optional[str]:
     m = re.search(r"kaggle\.com/code/([\w\-]+)/([\w\-]+)", text or "")
-    return f"{m.group(1)}/{m.group(2)}" if m else None
+    if m:
+        return f"{m.group(1)}/{m.group(2)}"
+    try:
+        data = json.loads(text or "{}")
+        if isinstance(data, dict):
+            if data.get("ref"):
+                return data["ref"]
+            if data.get("url"):
+                m2 = re.search(r"kaggle\.com/code/([\w\-]+)/([\w\-]+)", data["url"])
+                if m2:
+                    return f"{m2.group(1)}/{m2.group(2)}"
+    except Exception:
+        pass
+    return None
 
 
 def _normalize_source(source_json: str) -> str:
@@ -80,10 +93,16 @@ def _normalize_source(source_json: str) -> str:
         cells = [{
             "cell_type": "code", "execution_count": None, "metadata": {},
             "outputs": [],
-            "source": [line + "\n" for line in (source_json or "").splitlines()],
+            "source": source_json or "",
         }]
     else:
         cells = nb["cells"]
+        for cell in cells:
+            if isinstance(cell, dict):
+                if cell.get("cell_type") == "code":
+                    cell["outputs"] = []
+                if isinstance(cell.get("source"), list):
+                    cell["source"] = "".join(cell["source"])
     nb["cells"] = cells
     nb["metadata"] = nb.get("metadata") or {}
     nb["metadata"].setdefault("kernelspec", {
@@ -138,7 +157,10 @@ class KaggleFacade:
     def _client(self, auth: tuple):
         # lazy import so the module can be imported without httpx installed
         import httpx
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "kaggle-api/v1.7.0",
+        }
         if auth[0] == "bearer":
             headers["Authorization"] = f"Bearer {auth[2]}"
             return httpx.Client(
@@ -206,13 +228,54 @@ class KaggleFacade:
     def _push(self, nb: dict, new_version: bool, account: Optional[dict] = None) -> Optional[str]:
         auth = self._auth(account)
         owner = self._owner(auth)
+        code = _normalize_source(nb.get("source", "{}"))
+        accelerator = str(nb.get("accelerator") or "auto").strip().lower()
+        machine, gpu, tpu = ACCELERATORS.get(accelerator, ("", False, False))
+        internet = bool(nb.get("internet", True))
+        slug = nb.get("slug", "")
+        full_slug = f"{owner}/{slug}" if "/" not in slug else slug
+        title = (nb.get("title") or slug)[:50]
+        meta = self._build_metadata(owner, nb, new_version)
+        exec_type = "SAVE_AND_RUN_ALL" if new_version else "QUICK_SAVE"
+
         body = {
+            # Flat ApiSaveKernelRequest fields (official modern Kaggle server spec)
+            "slug": full_slug,
+            "new_title": title,
+            "newTitle": title,
+            "text": code,
+            "language": "python",
+            "kernel_type": "notebook",
+            "kernelType": "notebook",
+            "is_private": True,
+            "isPrivate": True,
+            "enable_gpu": gpu,
+            "enableGpu": gpu,
+            "enable_tpu": tpu,
+            "enableTpu": tpu,
+            "enable_internet": internet,
+            "enableInternet": internet,
+            "machine_shape": machine,
+            "machineShape": machine,
+            "kernel_execution_type": exec_type,
+            "kernelExecutionType": exec_type,
+            "dataset_data_sources": [],
+            "datasetDataSources": [],
+            "kernel_data_sources": [],
+            "kernelDataSources": [],
+            "competition_data_sources": [],
+            "competitionDataSources": [],
+            "model_data_sources": [],
+            "modelDataSources": [],
+            "category_ids": [],
+            "categoryIds": [],
+            # Legacy nested wrapper format (backwards compatibility)
             "new_version": new_version,
-            "metadata": self._build_metadata(owner, nb, new_version),
+            "metadata": meta,
             "source": {
                 "language": "python",
                 "kernel_type": "notebook",
-                "code": _normalize_source(nb.get("source", "{}")),
+                "code": code,
             },
         }
         last_resp = None

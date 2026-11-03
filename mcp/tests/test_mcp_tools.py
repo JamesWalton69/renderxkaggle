@@ -53,6 +53,10 @@ class FakeClient:
         self.calls.append("accounts")
         return [{"id": 1, "name": "acc", "username": "u", "has_key": True, "is_default": True}]
 
+    def verify_account(self, account_id):
+        self.calls.append(("verify", account_id))
+        return {"ok": True, "username": "u", "status": "valid"}
+
 
 def test_tools_route_to_client():
     f = FakeClient()
@@ -68,11 +72,13 @@ def test_tools_route_to_client():
     assert srv.stop_or_cancel_job(1)["message"] == "stopping"
     assert srv.requeue_job(2)["ok"] is True
     assert srv.list_accounts()["items"][0]["is_default"] is True
+    assert srv.verify_account(1)["status"] == "valid"
 
     assert ("create", "t", "gpu_t4", False) in f.calls
     assert ("run", 5, None) in f.calls and ("run", 5, "why") in f.calls
     assert ("jobs", "queued", 50) in f.calls
     assert ("cancel", 1) in f.calls and ("requeue", 2) in f.calls
+    assert ("verify", 1) in f.calls
 
 
 def test_manager_error_surfaces_detail():

@@ -12,7 +12,21 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+# Compatibility shim for environments with FastAPI <= 0.108 and Starlette >= 0.38
+try:
+    import starlette.routing
+    _orig_router_init = starlette.routing.Router.__init__
+    def _compat_router_init(self, *args, **kwargs):
+        kwargs.pop("on_startup", None)
+        kwargs.pop("on_shutdown", None)
+        return _orig_router_init(self, *args, **kwargs)
+    starlette.routing.Router.__init__ = _compat_router_init
+except Exception:
+    pass
+
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+if not hasattr(FastAPI, "max_body_size"):
+    FastAPI.max_body_size = None
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -524,6 +538,35 @@ def _parse_account_payload(body: dict) -> tuple[str, str, str]:
 @app.get("/api/accounts", dependencies=[Depends(require_auth)])
 def list_accounts():
     return db.list_accounts()
+
+
+@app.post("/api/accounts/verify", dependencies=[Depends(require_auth)])
+def verify_account_credentials(body: dict):
+    _, username, key = _parse_account_payload(body)
+    if not username or not key:
+        return {"ok": False, "username": username, "error": "username and API key are required"}
+    try:
+        items = app.state.facade.list_notebooks(page_size=1, account={"username": username, "key": key})
+        return {"ok": True, "username": username, "status": "valid", "notebooks_count": len(items)}
+    except Exception as exc:
+        msg = getattr(exc, "message", str(exc))
+        return {"ok": False, "username": username, "error": msg}
+
+
+@app.get("/api/accounts/{aid}/verify", dependencies=[Depends(require_auth)])
+@app.post("/api/accounts/{aid}/verify", dependencies=[Depends(require_auth)])
+def verify_account(aid: int):
+    account = db.get_account(aid)
+    if not account:
+        raise HTTPException(status_code=404, detail="account not found")
+    if not account.get("username") or not account.get("key"):
+        return {"ok": False, "username": account.get("username", ""), "error": "API credentials missing or unreadable"}
+    try:
+        items = app.state.facade.list_notebooks(page_size=1, account=account)
+        return {"ok": True, "username": account.get("username"), "status": "valid", "notebooks_count": len(items)}
+    except Exception as exc:
+        msg = getattr(exc, "message", str(exc))
+        return {"ok": False, "username": account.get("username"), "error": msg}
 
 
 @app.post("/api/accounts", dependencies=[Depends(require_auth)])

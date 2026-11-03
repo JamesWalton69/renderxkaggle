@@ -101,5 +101,8 @@ class ManagerClient:
     def accounts(self) -> list:
         return self._json("GET", "/api/accounts")
 
+    def verify_account(self, account_id: int) -> dict:
+        return self._json("GET", f"/api/accounts/{account_id}/verify")
+
     def close(self) -> None:
         self.http.close()

@@ -40,6 +40,10 @@ class SmokeTest(unittest.TestCase):
             )
         db.init_db()
         clear_tables("notebooks", "jobs", "job_logs", "settings", "sessions", "kaggle_accounts")
+        from app import config
+        config.POLL_SECONDS = 0.2
+        from app.main import _bootstrap_admin
+        _bootstrap_admin()
         cls.client = TestClient(app)
 
     @classmethod
@@ -88,15 +92,9 @@ class SmokeTest(unittest.TestCase):
         self.assertTrue(any(j["id"] == job_id for j in jobs))
 
         # worker should have picked it up quickly (start failure → failed, local-only)
-        import time
-        deadline = time.time() + 15
-        status = None
-        while time.time() < deadline:
-            r = self.client.get(f"/api/jobs/{job_id}")
-            status = r.json()["status"]
-            if status != "queued":
-                break
-            time.sleep(1)
+        app.state.worker.tick()
+        r = self.client.get(f"/api/jobs/{job_id}")
+        status = r.json()["status"]
         self.assertEqual(status, "failed")
         self.assertIn("Kaggle credentials", self.client.get(f"/api/jobs/{job_id}").json()["error"])
 

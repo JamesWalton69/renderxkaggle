@@ -33,6 +33,7 @@ window.Views.settings = {
                 <span class="k">${UI.esc(a.name)} <span class="mono" style="color:var(--faint)">(${UI.esc(a.username)})</span>
                   ${a.is_default ? `<span class="badge badge-violet">default</span>` : ""}</span>
                 <span class="v" style="display:flex;gap:8px;align-items:center">
+                  <button class="btn btn-ghost btn-sm" data-act="verify" data-id="${a.id}" type="button">Test</button>
                   ${a.origin === "dashboard" || !a.origin ? `
                     ${a.is_default ? "" : `<button class="btn btn-ghost btn-sm" data-act="default" data-id="${a.id}" type="button">Make default</button>`}
                     <button class="btn btn-danger btn-sm" data-act="delacc" data-id="${a.id}" type="button">Remove</button>
@@ -79,11 +80,31 @@ window.Views.settings = {
     root.querySelectorAll("[data-act]").forEach((btn) => {
       btn.onclick = () => {
         const id = Number(btn.dataset.id);
+        if (btn.dataset.act === "verify") this._verifyAccount(id, btn);
         if (btn.dataset.act === "default") this._setDefault(id, root);
         if (btn.dataset.act === "delacc") this._deleteAccount(id, root);
       };
     });
     root.querySelector("#s-pw-save").onclick = () => this._savePw(root);
+  },
+
+  async _verifyAccount(id, btn) {
+    const orig = btn.textContent;
+    btn.textContent = "Testing...";
+    btn.disabled = true;
+    try {
+      const res = await API.get(`/api/accounts/${id}/verify`);
+      if (res.ok) {
+        UI.toast(`Account @${res.username} is valid (${res.notebooks_count} notebooks found)`);
+      } else {
+        UI.toast(`Verification failed for @${res.username}: ${res.error}`, "error");
+      }
+    } catch (e) {
+      UI.toast(e.message, "error");
+    } finally {
+      btn.textContent = orig;
+      btn.disabled = false;
+    }
   },
 
   async _addAccount(root) {

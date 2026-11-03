@@ -106,5 +106,11 @@ def list_accounts() -> dict:
     return {"items": _client().accounts()}
 
 
+@mcp.tool()
+def verify_account(account_id: int) -> dict:
+    """Verify credentials for a Kaggle account by testing against Kaggle API."""
+    return _client().verify_account(account_id)
+
+
 if __name__ == "__main__":
     mcp.run()

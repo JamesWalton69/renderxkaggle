@@ -86,8 +86,64 @@ class AccountsDbTestCase(unittest.TestCase):
         # _client sets basic auth and does not include conflicting X-Kaggle-Authorization
         c = client._client(auth)
         self.assertNotIn("X-Kaggle-Authorization", c.headers)
+        self.assertEqual(c.headers.get("User-Agent"), "kaggle-api/v1.7.0")
         self.assertTrue(c.follow_redirects)
         self.assertIsNotNone(c.auth)
+
+    def test_normalize_source_cleaning(self):
+        import json
+        from app.kaggle_client import _normalize_source
+
+        raw = json.dumps({
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "execution_count": 5,
+                    "outputs": [{"output_type": "stream", "text": ["hello\n"]}],
+                    "source": ["import os\n", "print(1)\n"],
+                },
+                {
+                    "cell_type": "markdown",
+                    "source": ["# Title\n"],
+                }
+            ]
+        })
+        normalized = json.loads(_normalize_source(raw))
+        self.assertEqual(normalized["cells"][0]["outputs"], [])
+        self.assertEqual(normalized["cells"][0]["source"], "import os\nprint(1)\n")
+        self.assertEqual(normalized["cells"][1]["source"], "# Title\n")
+        self.assertEqual(normalized["metadata"]["kernelspec"]["name"], "python3")
+
+    def test_verify_account_endpoints(self):
+        from unittest.mock import MagicMock
+        from fastapi.testclient import TestClient
+        from app.main import app
+
+        aid = db.add_account("VerifyMe", "testuser", "testkey")
+        mock_facade = MagicMock()
+        mock_facade.list_notebooks.return_value = [{"title": "demo"}]
+
+        with TestClient(app, cookies={config.SESSION_COOKIE: "test"}) as client:
+            app.state.facade = mock_facade
+            from app.security import hash_token
+            # Seed session token for require_auth
+            token_hash = hash_token("test")
+            db.execute("INSERT INTO sessions(token_hash, created_at) VALUES(%s, NOW())", (token_hash,))
+
+            # 1. GET /api/accounts/{aid}/verify
+            res = client.get(f"/api/accounts/{aid}/verify")
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            self.assertTrue(data["ok"])
+            self.assertEqual(data["username"], "testuser")
+            self.assertEqual(data["notebooks_count"], 1)
+
+            # 2. POST /api/accounts/verify
+            res2 = client.post("/api/accounts/verify", json={"username": "raw_user", "api_key": "raw_key"})
+            self.assertEqual(res2.status_code, 200)
+            data2 = res2.json()
+            self.assertTrue(data2["ok"])
+            self.assertEqual(data2["username"], "raw_user")
 
 
 if __name__ == "__main__":
