@@ -71,23 +71,11 @@ def _ai_settings_provider() -> dict:
     }
 
 
-def _kaggle_settings_provider() -> dict:
-    enc = db.get_setting("kaggle_key", "")
-    try:
-        key = security.decrypt_secret(enc) if enc else ""
-    except Exception:
-        key = ""
-    return {
-        "kaggle_username": db.get_setting("kaggle_username", ""),
-        "kaggle_key": key,
-    }
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
     _bootstrap_admin()
-    facade = KaggleFacade(settings_provider=_kaggle_settings_provider)
+    facade = KaggleFacade()
     app.state.facade = facade
     app.state.agent = agent_mod.Agent(facade, ai_settings_provider=_ai_settings_provider)
     app.state.worker = worker_mod.Worker(facade)
@@ -193,15 +181,12 @@ def me(request: Request):
 @app.get("/api/settings", dependencies=[Depends(require_auth)])
 def get_settings():
     enc_key = db.get_setting("ai_api_key", "")
-    kgl_key = db.get_setting("kaggle_key", "")
     return {
         "ai_base_url": db.get_setting("ai_base_url", ""),
         "ai_model": db.get_setting("ai_model", ""),
         "ai_temperature": db.get_setting("ai_temperature", 0.2),
         "ai_api_key_set": bool(enc_key) or bool(config.AI_DEFAULTS["ai_api_key"]),
         "ai_api_key_origin": "dashboard" if enc_key else ("env" if config.AI_DEFAULTS["ai_api_key"] else "none"),
-        "kaggle_username": db.get_setting("kaggle_username", ""),
-        "kaggle_key_set": bool(kgl_key) or bool(config.KAGGLE_DEFAULTS["kaggle_key"]),
         "data_dir": str(config.DATA_DIR),
         "version": config.APP_VERSION,
         "poll_seconds": config.POLL_SECONDS,
@@ -210,8 +195,7 @@ def get_settings():
 
 @app.put("/api/settings", dependencies=[Depends(require_auth)])
 def put_settings(body: dict):
-    allowed = {"ai_base_url", "ai_api_key", "ai_model", "ai_temperature",
-               "kaggle_username", "kaggle_key"}
+    allowed = {"ai_base_url", "ai_api_key", "ai_model", "ai_temperature"}
     for key, value in body.items():
         if key not in allowed:
             raise HTTPException(status_code=400, detail=f"unknown setting {key}")
@@ -219,7 +203,7 @@ def put_settings(body: dict):
             continue
         if key in ("ai_base_url", "ai_model") and not str(value).strip():
             raise HTTPException(status_code=400, detail=f"{key} cannot be empty")
-        if key in ("ai_api_key", "kaggle_key"):
+        if key == "ai_api_key":
             if str(value).strip():
                 db.set_setting(key, security.encrypt_secret(str(value).strip()))
             continue
@@ -315,9 +299,7 @@ def create_notebook(body: dict):
         slug = f"{slug}-{datetime.now().strftime('%H%M%S')}"
     now = _now()
     account_id = body.get("account_id")
-    if account_id is not None and not db.fetch_one(
-        "SELECT 1 FROM kaggle_accounts WHERE id=?", (int(account_id),)
-    ):
+    if account_id is not None and config.get_account(account_id) is None:
         account_id = None
     accelerator = str(body.get("accelerator", "auto")).strip().lower() or "auto"
     if accelerator not in kaggle_client.ACCELERATORS:
@@ -362,7 +344,7 @@ def update_notebook(nid: int, body: dict):
         if account_id is None:
             updates.append("account_id=?")
             values.append(None)
-        elif db.fetch_one("SELECT 1 FROM kaggle_accounts WHERE id=?", (int(account_id),)):
+        elif config.get_account(account_id) is not None:
             updates.append("account_id=?")
             values.append(int(account_id))
         else:
@@ -543,38 +525,9 @@ def global_logs(limit: int = 200):
 
 @app.get("/api/accounts", dependencies=[Depends(require_auth)])
 def list_accounts():
-    rows = db.list_accounts()
-    for r in rows:
-        r["has_key"] = True
-        r.pop("key_enc", None)
-    return rows
-
-
-@app.post("/api/accounts", dependencies=[Depends(require_auth)])
-def add_account(body: dict):
-    name = str(body.get("name", "")).strip()
-    username = str(body.get("username", "")).strip()
-    key = str(body.get("api_key", "")).strip()
-    if not name or not username or not key:
-        raise HTTPException(status_code=400, detail="name, username and API key are required")
-    aid = db.add_account(name, username, key)
-    return {"id": aid}
-
-
-@app.put("/api/accounts/{aid}/default", dependencies=[Depends(require_auth)])
-def set_account_default(aid: int):
-    if not db.fetch_one("SELECT 1 FROM kaggle_accounts WHERE id=?", (aid,)):
-        raise HTTPException(status_code=404, detail="account not found")
-    db.set_default_account(aid)
-    return {"ok": True}
-
-
-@app.delete("/api/accounts/{aid}", dependencies=[Depends(require_auth)])
-def delete_account(aid: int):
-    if not db.fetch_one("SELECT 1 FROM kaggle_accounts WHERE id=?", (aid,)):
-        raise HTTPException(status_code=404, detail="account not found")
-    db.delete_account(aid)
-    return {"ok": True}
+    """Accounts come only from environment variables (KAGGLE_ACCOUNTS or
+    KAGGLE_USERNAME/KAGGLE_KEY). Read-only — no dashboard credential entry."""
+    return config.accounts()
 
 
 # ------------------------------------------------------------------ approvals

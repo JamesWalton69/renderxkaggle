@@ -149,7 +149,7 @@ class Worker:
             db.add_job_log(job["id"], f"resuming execution of {ref}", db_path=self.db_path)
             return
 
-        account = db.get_account(meta.get("account_id"), db_path=self.db_path)
+        account = config.get_account(meta.get("account_id"))
         try:
             if nb is None:
                 raise ApiError("its notebook was deleted; job cannot run")
@@ -211,7 +211,7 @@ class Worker:
             return
 
         try:
-            status = self.facade.get_status(ref, account=db.get_account(meta.get("account_id"), db_path=self.db_path))
+            status = self.facade.get_status(ref, account=config.get_account(meta.get("account_id")))
         except ApiError as exc:
             self._poll_failure(job, f"status error: {exc.message}")
             return
@@ -282,7 +282,7 @@ class Worker:
             meta0 = _job_meta(job)
             files = self.facade.download_output(
                 ref, dest,
-                account=db.get_account(meta0.get("account_id"), db_path=self.db_path),
+                account=config.get_account(meta0.get("account_id")),
             )
         except Exception as exc:
             db.execute(
@@ -372,7 +372,7 @@ def stop_job(facade, job_id: int, db_path=None) -> str:
             "title": meta.get("notebook_title", "Notebook"),
             "source": "{}", "accelerator": "auto", "internet": 1,
         }
-    account = db.get_account(meta.get("account_id"), db_path=db_path)
+    account = config.get_account(meta.get("account_id"))
     dest = config.OUTPUTS_DIR / f"job-{job_id}"
     try:
         facade.download_output(ref, dest, account=account)  # pre-stop snapshot

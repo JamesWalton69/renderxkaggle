@@ -48,7 +48,64 @@ AI_DEFAULTS = {
     "ai_temperature": os.environ.get("AI_TEMPERATURE", "0.2"),
 }
 
-KAGGLE_DEFAULTS = {
-    "kaggle_username": os.environ.get("KAGGLE_USERNAME", ""),
-    "kaggle_key": os.environ.get("KAGGLE_KEY", ""),
-}
+# ---------------------------------------------------------------- Kaggle accounts (env-only)
+
+def _parse_env_accounts() -> list[dict]:
+    """Accounts from the KAGGLE_ACCOUNTS JSON env var, e.g.
+    [{"name":"A","username":"u1","key":"k1"}, ...]. Falls back to the legacy
+    KAGGLE_USERNAME / KAGGLE_KEY pair (and KAGGLE_API_TOKEN) if unset.
+    """
+    import json as _json
+
+    raw = os.environ.get("KAGGLE_ACCOUNTS", "").strip()
+    accounts: list[dict] = []
+    if raw:
+        try:
+            data = _json.loads(raw)
+        except ValueError:
+            data = None
+        if isinstance(data, list):
+            for i, item in enumerate(data, start=1):
+                if isinstance(item, dict) and item.get("username") and item.get("key"):
+                    accounts.append({
+                        "id": i,
+                        "name": str(item.get("name") or item["username"]),
+                        "username": str(item["username"]).strip(),
+                        "key": str(item["key"]).strip(),
+                    })
+    if not accounts:
+        u = os.environ.get("KAGGLE_USERNAME", "").strip()
+        k = os.environ.get("KAGGLE_KEY", "").strip()
+        if u and k:
+            accounts.append({"id": 1, "name": u, "username": u, "key": k})
+    return accounts
+
+
+_env_accounts: list[dict] | None = None
+
+
+def accounts() -> list[dict]:
+    """Public sanitized roster [{id, name, username, is_default}]."""
+    global _env_accounts
+    if _env_accounts is None:
+        _env_accounts = _parse_env_accounts()
+    return [
+        {"id": a["id"], "name": a["name"], "username": a["username"],
+         "is_default": a["id"] == 1}
+        for a in _env_accounts
+    ]
+
+
+def get_account(account_id) -> dict | None:
+    """Resolve an account id (or None → default) to {username, key}."""
+    global _env_accounts
+    if _env_accounts is None:
+        _env_accounts = _parse_env_accounts()
+    if not _env_accounts:
+        return None
+    if account_id is None:
+        return dict(_env_accounts[0])
+    for a in _env_accounts:
+        if a["id"] == int(account_id):
+            return dict(a)
+    return None

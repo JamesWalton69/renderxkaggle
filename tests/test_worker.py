@@ -1,4 +1,6 @@
 """Worker state-machine tests — offline, using a fake Kaggle facade."""
+import json
+import os
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -164,12 +166,18 @@ class WorkerTestCase(unittest.TestCase):
         self.assertEqual(len(jobs), 1)
 
     def test_two_accounts_route_creds(self):
-        aid = db.add_account("Account A", "user_a", "key_a", db_path=self.db_path)
+        os.environ["KAGGLE_ACCOUNTS"] = json.dumps([
+            {"name": "Account A", "username": "user_a", "key": "key_a"},
+            {"name": "Account B", "username": "user_b", "key": "key_b"},
+        ])
+        config._env_accounts = None
+        self.addCleanup(lambda: (os.environ.pop("KAGGLE_ACCOUNTS", None),
+                                 setattr(config, "_env_accounts", None)))
         now = db.now_iso()
         nb = db.execute(
             "INSERT INTO notebooks(slug,title,description,source,account_id,created_at,updated_at) "
             "VALUES(?,?,?,?,?,?,?)",
-            ("accnb", "Acc NB", "", "{}", aid, now, now),
+            ("accnb", "Acc NB", "", "{}", 1, now, now),
             db_path=self.db_path,
         )
         j = self._enqueue(nb)
@@ -179,8 +187,8 @@ class WorkerTestCase(unittest.TestCase):
         # polling uses the same account
         job = db.fetch_one("SELECT * FROM jobs WHERE id=?", (j,), db_path=self.db_path)
         self.assertEqual(job["status"], "running")
-        meta = __import__("json").loads(job["meta"])
-        self.assertEqual(meta["account_id"], aid)
+        meta = json.loads(job["meta"])
+        self.assertEqual(meta["account_id"], 1)
         self.worker.tick()
         self.assertEqual(self.facade.last_status_account["username"], "user_a")
 

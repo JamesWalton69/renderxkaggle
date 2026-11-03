@@ -49,41 +49,16 @@ window.Views.settings = {
         </div>
 
         <div class="card">
-          <div class="card-title">Kaggle identity</div>
-          <div class="field">
-            <label>Username</label>
-            <input id="s-kgl-user" value="${UI.esc(s.kaggle_username)}" placeholder="you@kaggle">
-          </div>
-          <div class="field">
-            <label>API key ${s.kaggle_key_set ? "(stored)" : "(not set)"}</label>
-            <input id="s-kgl-key" type="password" placeholder="••••••••" autocomplete="new-password">
-          </div>
-          <button class="btn btn-primary" id="s-kgl-save" type="button">Save Kaggle credentials</button>
-          <div class="form-error" id="s-kgl-err"></div>
-          <p style="color:var(--faint);font-size:12px;margin-top:12px">Only one identity is used. Environment variables take precedence if dashboard fields are empty.</p>
-        </div>
-
-        <div class="card">
           <div class="card-title">Kaggle accounts ·${accounts.length}</div>
           ${accounts.length ? `<div style="margin-bottom:12px">
             ${accounts.map((a) => `
               <div class="kv">
                 <span class="k">${UI.esc(a.name)} <span class="mono" style="color:var(--faint)">(${UI.esc(a.username)})</span>
                   ${a.is_default ? `<span class="badge badge-violet">default</span>` : ""}</span>
-                <span class="v" style="display:flex;gap:8px">
-                  ${a.is_default ? "" : `<button class="btn btn-ghost btn-sm" data-act="default" data-id="${a.id}" type="button">Make default</button>`}
-                  <button class="btn btn-danger btn-sm" data-act="delacc" data-id="${a.id}" type="button">Remove</button>
-                </span>
+                <span class="v mono" style="color:var(--faint)">env</span>
               </div>`).join("")}
-          </div>` : `<p style="color:var(--muted);font-size:12.5px;margin-bottom:12px">No accounts registered — the app falls back to KAGGLE_USERNAME / KAGGLE_KEY environment variables.</p>`}
-          <div class="form-row">
-            <div class="field"><label>Name</label><input id="acc-name" placeholder="e.g. Account A"></div>
-            <div class="field"><label>Kaggle username</label><input id="acc-user" placeholder="you@kaggle"></div>
-          </div>
-          <div class="field"><label>API key</label><input id="acc-key" type="password" placeholder="••••••••" autocomplete="new-password"></div>
-          <button class="btn btn-primary" id="acc-add" type="button">＋ Add account</button>
-          <div class="form-error" id="acc-err"></div>
-          <p style="color:var(--faint);font-size:12px;margin-top:12px">Pick the account that runs each notebook in the notebook editor. Keys are encrypted at rest.</p>
+          </div>` : `<p style="color:var(--muted);font-size:12.5px;margin-bottom:12px">No accounts configured.</p>`}
+          <p style="color:var(--faint);font-size:12px;margin-top:12px">Accounts are configured only via environment variables on the server — <span class="mono">KAGGLE_ACCOUNTS</span> (JSON list) or <span class="mono">KAGGLE_USERNAME</span> / <span class="mono">KAGGLE_KEY</span>. Credentials are never stored by this dashboard. Pick the account that runs each notebook in the notebook editor.</p>
         </div>
 
         <div class="card">
@@ -108,49 +83,7 @@ window.Views.settings = {
       </div>`;
 
     root.querySelector("#s-ai-save").onclick = () => this._saveAI(root);
-    root.querySelector("#s-kgl-save").onclick = () => this._saveKgl(root);
     root.querySelector("#s-pw-save").onclick = () => this._savePw(root);
-    root.querySelector("#acc-add").onclick = () => this._addAccount(root);
-    root.querySelectorAll("[data-act]").forEach((btn) => {
-      btn.onclick = () => {
-        const id = Number(btn.dataset.id);
-        if (btn.dataset.act === "default") this._setDefault(id, root);
-        if (btn.dataset.act === "delacc") this._deleteAccount(id, root);
-      };
-    });
-  },
-
-  async _addAccount(root) {
-    const body = {
-      name: document.getElementById("acc-name").value.trim(),
-      username: document.getElementById("acc-user").value.trim(),
-      api_key: document.getElementById("acc-key").value.trim(),
-    };
-    try {
-      await API.post("/api/accounts", body);
-      UI.toast("Account added");
-      this._load(root);
-    } catch (e) {
-      document.getElementById("acc-err").textContent = e.message;
-    }
-  },
-
-  async _setDefault(id, root) {
-    try {
-      await API.put(`/api/accounts/${id}/default`, {});
-      UI.toast("Default account updated");
-      this._load(root);
-    } catch (e) { UI.toast(e.message, "error"); }
-  },
-
-  _deleteAccount(id, root) {
-    UI.confirm("Remove this Kaggle account? Existing jobs keep running under it until they finish.", async () => {
-      try {
-        await API.del(`/api/accounts/${id}`);
-        UI.toast("Account removed");
-        this._load(root);
-      } catch (e) { UI.toast(e.message, "error"); }
-    });
   },
 
   async _saveAI(root) {
@@ -167,19 +100,6 @@ window.Views.settings = {
       this._load(root);
     } catch (e) {
       document.getElementById("s-ai-err").textContent = e.message;
-    }
-  },
-
-  async _saveKgl(root) {
-    const body = { kaggle_username: document.getElementById("s-kgl-user").value.trim() };
-    const key = document.getElementById("s-kgl-key").value.trim();
-    if (key) body.kaggle_key = key;
-    try {
-      await API.put("/api/settings", body);
-      UI.toast("Kaggle credentials saved");
-      this._load(root);
-    } catch (e) {
-      document.getElementById("s-kgl-err").textContent = e.message;
     }
   },
 

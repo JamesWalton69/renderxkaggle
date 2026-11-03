@@ -17,8 +17,10 @@ services:
         value: /data
       - key: ADMIN_PASSWORD
         sync: false        # set this in Render dashboard; if unset a random one is generated
+      - key: KAGGLE_ACCOUNTS
+        sync: false        # JSON list: [{"name","username","key"},...] — the only way to configure Kaggle accounts
       - key: KAGGLE_USERNAME
-        sync: false        # optional: prefill Kaggle identity (can also be set in dashboard Settings)
+        sync: false        # optional legacy fallbacks (single account) when KAGGLE_ACCOUNTS is unset
       - key: KAGGLE_KEY
         sync: false
       - key: AI_BASE_URL

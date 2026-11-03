@@ -191,16 +191,17 @@ than the web service.
 | Variable | Needed? | What it does |
 |---|---|---|
 | `ADMIN_PASSWORD` | **yes** | Dashboard login password. If unset, a random one is written to `data/admin_bootstrap.txt` on first boot. |
-| `KAGGLE_USERNAME` / `KAGGLE_KEY` | optional | Fallback identity used when a notebook has no assigned account. Prefer registering accounts in dashboard Settings. |
-| `KAGGLE_API_TOKEN` | optional | Bearer-token fallback when no username/key pair is configured (works for either env or dashboard-less setups). |
+| `KAGGLE_ACCOUNTS` | **for Kaggle** | JSON array of accounts: `[{"name":"Account A","username":"u1","key":"k1"},...]`. IDs are 1-based by list order; the first is the default. This is the **only** way to configure Kaggle credentials — the dashboard has no credential entry. |
+| `KAGGLE_USERNAME` / `KAGGLE_KEY` | optional | Legacy fallback: single account used when `KAGGLE_ACCOUNTS` is unset/invalid. |
+| `KAGGLE_API_TOKEN` | optional | Bearer-token fallback when no username/key pair is configured. |
 | `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | optional | Pre-fill for the assistant; can also be set/edited in Settings. |
 
 **4. Deploy** → wait for the build to finish, then open the service URL.
 
-**5. First boot (one-time, all in the dashboard):**
+**5. First boot (one-time):**
 1. Sign in with your admin password.
-2. **Settings → Kaggle accounts** → add both of your Kaggle accounts
-   (name → username → API key). The first one becomes the default.
+2. Set `KAGGLE_ACCOUNTS` (both accounts) in **Environment** — the dashboard
+   shows them read-only under **Settings → Kaggle accounts**.
 3. **Settings → AI assistant** → paste your provider's base URL, API key, and
    model ID.
 4. Create a notebook: **Notebooks → New notebook** → pick which Kaggle account
@@ -209,12 +210,13 @@ than the web service.
 
 ### Two Kaggle accounts
 
-- Register each account once in **Settings → Kaggle accounts** (keys stored
-  encrypted).
-- Every notebook selects its account in the editor (default = env fallback).
+- Accounts come **only** from environment variables (`KAGGLE_ACCOUNTS` JSON
+  list, or the legacy `KAGGLE_USERNAME`/`KAGGLE_KEY` pair). Nothing is stored
+  in the app database — changes survive restarts and redeploys.
+- Every notebook selects its account in the editor (default = first env
+  account).
 - Jobs inherit the notebook's account and **keep polling under that account**
-  even if you later delete the account (they finish normally; new runs fall
-  back to default).
+  even if the env list later changes (they finish normally).
 - Only one execution runs at a time globally; the queue is cross-account.
 
 ## Deployment checklist — what still needs you (authorization)
@@ -224,7 +226,8 @@ can operate for real, *you* must authorize the following (all via the dashboard
 after deploy):
 
 - [ ] Set `ADMIN_PASSWORD` (or read the generated one).
-- [ ] Add your **Kaggle credentials** (Settings → Kaggle identity).
+- [ ] Set `KAGGLE_ACCOUNTS` with your **Kaggle credentials** (env-only — see
+      "Deploy to Render").
 - [ ] Add your **AI provider** base URL, key, and model (Settings → AI assistant) —
       any OpenAI-compatible endpoint.
 - [ ] First live run: submit a small notebook and verify the Kaggle API shapes.

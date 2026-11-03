@@ -123,9 +123,9 @@ class KaggleFacade:
             if tok:
                 return ("bearer", "", tok.strip())
             raise CredentialsMissing(
-                "Kaggle credentials are not configured. Add an account in "
-                "Settings (or set KAGGLE_USERNAME / KAGGLE_KEY / "
-                "KAGGLE_API_TOKEN)."
+                "Kaggle credentials are not configured. Set KAGGLE_ACCOUNTS "
+                "(JSON list) or KAGGLE_USERNAME / KAGGLE_KEY / "
+                "KAGGLE_API_TOKEN as environment variables."
             )
         return ("basic", u.strip(), k.strip())
 

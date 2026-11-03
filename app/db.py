@@ -73,14 +73,6 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   ts    TEXT NOT NULL,
   meta  TEXT NOT NULL DEFAULT '{}' -- tool events for UI
 );
-CREATE TABLE IF NOT EXISTS kaggle_accounts (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT NOT NULL,
-  username   TEXT NOT NULL,
-  key_enc   TEXT NOT NULL,
-  is_default INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL
-);
 """
 
 
@@ -120,7 +112,7 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
 
 def _seed_defaults(db_path=None) -> None:
     """Bootstrap settings from environment when the DB is empty."""
-    for key, value in {**config.AI_DEFAULTS, **config.KAGGLE_DEFAULTS}.items():
+    for key, value in config.AI_DEFAULTS.items():
         if value and not get_setting(key, db_path=db_path, default=""):
             set_setting(key, value, db_path=db_path)
 
@@ -221,66 +213,3 @@ def enqueue_job(notebook_id: int, kind: str = "manual", db_path=None) -> int:
         (notebook_id, kind, config.JOB_QUEUED, now_iso()),
         db_path=db_path,
     )
-
-
-# ---------------------------------------------------------------- Kaggle accounts
-
-def list_accounts(db_path=None) -> list[dict]:
-    return fetch_all(
-        "SELECT id, name, username, is_default FROM kaggle_accounts "
-        "ORDER BY is_default DESC, id",
-        db_path=db_path,
-    )
-
-
-def get_account(account_id, db_path=None) -> Optional[dict]:
-    """Return decrypted credentials for a registered account, or None."""
-    if not account_id:
-        return None
-    row = fetch_one(
-        "SELECT * FROM kaggle_accounts WHERE id=?", (int(account_id),), db_path=db_path
-    )
-    if not row:
-        return None
-    try:
-        key = security.decrypt_secret(row["key_enc"])
-    except Exception:
-        key = ""
-    return {"id": row["id"], "name": row["name"], "username": row["username"], "key": key}
-
-
-def add_account(name: str, username: str, key: str, db_path=None) -> int:
-    has_any = fetch_one("SELECT 1 FROM kaggle_accounts LIMIT 1", db_path=db_path)
-    is_default = 1 if not has_any else 0
-    return execute(
-        "INSERT INTO kaggle_accounts(name, username, key_enc, is_default, created_at) "
-        "VALUES(?,?,?,?,?)",
-        (name, username, security.encrypt_secret(key), is_default, now_iso()),
-        db_path=db_path,
-    )
-
-
-def set_default_account(account_id: int, db_path=None) -> None:
-    execute("UPDATE kaggle_accounts SET is_default=0", db_path=db_path)
-    execute(
-        "UPDATE kaggle_accounts SET is_default=1 WHERE id=?",
-        (account_id,),
-        db_path=db_path,
-    )
-
-
-def delete_account(account_id: int, db_path=None) -> None:
-    row = fetch_one(
-        "SELECT is_default FROM kaggle_accounts WHERE id=?", (account_id,), db_path=db_path
-    )
-    execute("DELETE FROM kaggle_accounts WHERE id=?", (account_id,), db_path=db_path)
-    if row and row["is_default"]:
-        nxt = fetch_one(
-            "SELECT id FROM kaggle_accounts ORDER BY id LIMIT 1", db_path=db_path
-        )
-        if nxt:
-            execute(
-                "UPDATE kaggle_accounts SET is_default=1 WHERE id=?",
-                (nxt["id"],),
-                db_path=db_path,
-            )
