@@ -141,6 +141,8 @@ static/
   js/api.js, ui.js, app.js, views/*.js
 tests/
   test_scheduler.py  test_security.py  test_agent.py  test_worker.py
+android/
+  native Android app (Kotlin + Jetpack Compose) — see android/README.md
 render.yaml          Render blueprint
 requirements.txt     fastapi, uvicorn, httpx, cryptography
 ```
