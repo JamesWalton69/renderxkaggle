@@ -60,6 +60,14 @@ CREATE TABLE IF NOT EXISTS job_logs (
   line   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_job_logs_job ON job_logs(job_id, id);
+CREATE TABLE IF NOT EXISTS kaggle_accounts (
+  id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name       TEXT NOT NULL,
+  username   TEXT NOT NULL,
+  key_enc    TEXT NOT NULL,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
 """
 
 
@@ -187,3 +195,96 @@ def enqueue_job(notebook_id: int, kind: str = "manual") -> int:
         "INSERT INTO jobs(notebook_id, kind, status, created_at) VALUES(%s,%s,%s,%s) RETURNING id",
         (notebook_id, kind, config.JOB_QUEUED, now_iso()),
     )
+
+
+# ---------------------------------------------------------------- Kaggle accounts
+
+def list_accounts() -> list[dict]:
+    try:
+        rows = fetch_all(
+            "SELECT id, name, username, is_default FROM kaggle_accounts "
+            "ORDER BY is_default DESC, id"
+        )
+        if rows:
+            for r in rows:
+                r["has_key"] = True
+                r["origin"] = "dashboard"
+            return rows
+    except Exception:
+        pass
+    env_accs = config.accounts()
+    for a in env_accs:
+        a["has_key"] = True
+        a["origin"] = "env"
+    return env_accs
+
+
+def get_account(account_id) -> Optional[dict]:
+    """Return decrypted credentials for an account, falling back to env."""
+    if account_id is not None:
+        try:
+            row = fetch_one(
+                "SELECT * FROM kaggle_accounts WHERE id=%s", (int(account_id),)
+            )
+            if row:
+                from . import security
+                try:
+                    key = security.decrypt_secret(row["key_enc"])
+                except Exception:
+                    key = ""
+                return {"id": row["id"], "name": row["name"], "username": row["username"], "key": key}
+        except Exception:
+            pass
+    else:
+        try:
+            row = fetch_one(
+                "SELECT * FROM kaggle_accounts WHERE is_default=1 LIMIT 1"
+            )
+            if not row:
+                row = fetch_one("SELECT * FROM kaggle_accounts ORDER BY id LIMIT 1")
+            if row:
+                from . import security
+                try:
+                    key = security.decrypt_secret(row["key_enc"])
+                except Exception:
+                    key = ""
+                return {"id": row["id"], "name": row["name"], "username": row["username"], "key": key}
+        except Exception:
+            pass
+    return config.get_account(account_id)
+
+
+def add_account(name: str, username: str, key: str) -> int:
+    from . import security
+    has_any = fetch_one("SELECT 1 FROM kaggle_accounts LIMIT 1")
+    is_default = 1 if not has_any else 0
+    return execute(
+        "INSERT INTO kaggle_accounts(name, username, key_enc, is_default, created_at) "
+        "VALUES(%s,%s,%s,%s,%s) RETURNING id",
+        (name, username, security.encrypt_secret(key), is_default, now_iso()),
+    )
+
+
+def set_default_account(account_id: int) -> None:
+    execute("UPDATE kaggle_accounts SET is_default=0")
+    execute(
+        "UPDATE kaggle_accounts SET is_default=1 WHERE id=%s",
+        (account_id,),
+    )
+
+
+def delete_account(account_id: int) -> None:
+    row = fetch_one(
+        "SELECT is_default FROM kaggle_accounts WHERE id=%s", (account_id,)
+    )
+    execute("DELETE FROM kaggle_accounts WHERE id=%s", (account_id,))
+    if row and row["is_default"]:
+        nxt = fetch_one(
+            "SELECT id FROM kaggle_accounts ORDER BY id LIMIT 1"
+        )
+        if nxt:
+            execute(
+                "UPDATE kaggle_accounts SET is_default=1 WHERE id=%s",
+                (nxt["id"],),
+            )
+

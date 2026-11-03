@@ -55,15 +55,45 @@ def hash_token(raw: str) -> str:
 
 
 # ------------------------------------------------------------------ encryption
-# Data encryption lives in the DB; key file lives next to it. If the key file
-# is lost (ephemeral disk), saved secrets are unrecoverable — documented.
+# Key resolution order: SECRET_KEY env var -> Neon Postgres settings table -> local file.
+# Survives Render redeploys because it is persisted in Neon.
+
+_cached_key: bytes | None = None
+
 
 def _secret_key() -> bytes:
+    global _cached_key
+    if _cached_key is not None:
+        return _cached_key
+    env_k = os.environ.get("SECRET_KEY", "").strip()
+    if env_k:
+        try:
+            _cached_key = bytes.fromhex(env_k) if len(env_k) == 64 else hashlib.sha256(env_k.encode()).digest()
+            return _cached_key
+        except Exception:
+            pass
+    try:
+        from . import db
+        stored = db.get_setting("app_secret_key", "")
+        if stored:
+            _cached_key = bytes.fromhex(stored)
+            return _cached_key
+        new_key = os.urandom(32)
+        db.set_setting("app_secret_key", new_key.hex())
+        _cached_key = new_key
+        return _cached_key
+    except Exception:
+        pass
     if config.SECRET_PATH.exists():
-        return bytes.fromhex(config.SECRET_PATH.read_text().strip())
+        _cached_key = bytes.fromhex(config.SECRET_PATH.read_text().strip())
+        return _cached_key
     key = os.urandom(32)
-    config.SECRET_PATH.write_text(key.hex())
-    return key
+    try:
+        config.SECRET_PATH.write_text(key.hex())
+    except Exception:
+        pass
+    _cached_key = key
+    return _cached_key
 
 
 def encrypt_secret(plaintext: str) -> str:

@@ -55,7 +55,7 @@ class FakeKaggle:
 class WorkerTestCase(unittest.TestCase):
     def setUp(self):
         db.init_db()
-        clear_tables("notebooks", "jobs", "job_logs", "settings", "sessions")
+        clear_tables("notebooks", "jobs", "job_logs", "settings", "sessions", "kaggle_accounts")
         self.facade = FakeKaggle()
         self.worker = Worker(self.facade, poll_seconds=0.1)
 

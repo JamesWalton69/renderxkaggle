@@ -128,7 +128,7 @@ window.Views.notebooks = {
     const code = nb ? notebookCellToCode(nb.source) : "print('Hello from Kaggle Cloud Manager')";
     let accounts = [];
     try { accounts = await API.get("/api/accounts"); } catch (e) { /* non-fatal */ }
-    const accountOptions = `<option value="">Default (env)</option>` + accounts.map((a) =>
+    const accountOptions = `<option value="">Default account</option>` + accounts.map((a) =>
       `<option value="${a.id}" ${nb && nb.account_id === a.id ? "selected" : ""}>${UI.esc(a.name)} (${UI.esc(a.username)})</option>`
     ).join("");
     const ACCELS = ["auto", "cpu", "gpu_t4", "gpu_t4_x2", "gpu_p100", "gpu_v100", "gpu_l4", "gpu_a100", "gpu_h100", "tpu_v3_8"];

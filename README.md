@@ -188,7 +188,7 @@ than the web service.
 |---|---|---|
 | `ADMIN_PASSWORD` | **yes** | Dashboard login password. If unset, a random one is written to `data/admin_bootstrap.txt` on first boot. |
 | `DATABASE_URL` | **yes** | Postgres connection string (e.g. from Neon). The app uses Postgres, not SQLite — on Render's free tier this is the *only* durable storage. |
-| `KAGGLE_ACCOUNTS` | **for Kaggle** | JSON array of accounts: `[{"name":"Account A","username":"u1","key":"k1"},...]`. IDs are 1-based by list order; the first is the default. This is the **only** way to configure Kaggle credentials — the dashboard has no credential entry. |
+| `KAGGLE_ACCOUNTS` | optional | Optional initial accounts (JSON array `[{"name":"A","username":"u1","key":"k1"}]`). You can also add and manage Kaggle accounts directly in the dashboard under **Settings**, where they are stored securely in Neon Postgres. |
 | `KAGGLE_USERNAME` / `KAGGLE_KEY` | optional | Legacy fallback: single account used when `KAGGLE_ACCOUNTS` is unset/invalid. |
 | `KAGGLE_API_TOKEN` | optional | Bearer-token fallback when no username/key pair is configured. |
 
@@ -196,22 +196,18 @@ than the web service.
 
 **5. First boot (one-time):**
 1. Sign in with your admin password.
-2. Set `KAGGLE_ACCOUNTS` (both accounts) in **Environment** — the dashboard
-   shows them read-only under **Settings → Kaggle accounts**.
+2. Go to **Settings** → **Add Kaggle account** to add your accounts (stored durably in Neon Postgres; API keys encrypted with AES-GCM). Alternatively, set `KAGGLE_ACCOUNTS` in Environment.
 3. Create a notebook: **Notebooks → New notebook** → pick which Kaggle account
    should run it.
 4. Press **Run** — watch it appear in **Jobs**, then follow the logs.
 5. (Optional) Connect the MCP server to your agent — see `mcp/README.md`.
 
-### Two Kaggle accounts
+### Multiple Kaggle accounts
 
-- Accounts come **only** from environment variables (`KAGGLE_ACCOUNTS` JSON
-  list, or the legacy `KAGGLE_USERNAME`/`KAGGLE_KEY` pair). Nothing is stored
-  in the app database — changes survive restarts and redeploys.
-- Every notebook selects its account in the editor (default = first env
-  account).
+- Accounts can be added and managed directly in the dashboard under **Settings**, or supplied via `KAGGLE_ACCOUNTS` environment variable. Stored in Neon Postgres with AES-GCM encryption.
+- Every notebook selects its account in the editor (default = first/default account).
 - Jobs inherit the notebook's account and **keep polling under that account**
-  even if the env list later changes (they finish normally).
+  even if the roster later changes (they finish normally).
 - Only one execution runs at a time globally; the queue is cross-account.
 
 ## Deployment checklist — what still needs you (authorization)
@@ -221,8 +217,7 @@ can operate for real, *you* must authorize the following (all via the dashboard
 after deploy):
 
 - [ ] Set `ADMIN_PASSWORD` (or read the generated one).
-- [ ] Set `KAGGLE_ACCOUNTS` with your **Kaggle credentials** (env-only — see
-      "Deploy to Render").
+- [ ] Add your **Kaggle accounts** (via dashboard **Settings** or `KAGGLE_ACCOUNTS` env).
 - [ ] (Optional) Connect the **MCP server** to your agent — see `mcp/README.md`.
 - [ ] First live run: submit a small notebook and verify the Kaggle API shapes.
       The client in `app/kaggle_client.py` isolates every endpoint so any

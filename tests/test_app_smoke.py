@@ -39,7 +39,7 @@ class SmokeTest(unittest.TestCase):
                 f"fastapi/starlette mismatch in this environment: {IMPORT_ERR}"
             )
         db.init_db()
-        clear_tables("notebooks", "jobs", "job_logs", "settings", "sessions")
+        clear_tables("notebooks", "jobs", "job_logs", "settings", "sessions", "kaggle_accounts")
         cls.client = TestClient(app)
 
     @classmethod
@@ -105,10 +105,25 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertTrue(len(r.json()["logs"]) >= 1)
 
-        # accounts are env-only → read-only GET returns the (empty) roster
+        # multi-account CRUD via Neon Postgres
+        r = self.client.post("/api/accounts", json={
+            "name": "Acct A", "username": "user_a", "api_key": "key_a",
+        })
+        self.assertEqual(r.status_code, 200, r.text)
+        account_id = r.json()["id"]
+
         r = self.client.get("/api/accounts")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json(), [])
+        self.assertEqual(len(r.json()), 1)
+        self.assertEqual(r.json()[0]["username"], "user_a")
+        self.assertEqual(r.json()[0]["is_default"], 1)
+        self.assertNotIn("key_enc", r.json()[0])
+
+        r = self.client.put(f"/api/accounts/{account_id}/default", json={})
+        self.assertEqual(r.status_code, 200)
+
+        r = self.client.delete(f"/api/accounts/{account_id}")
+        self.assertEqual(r.status_code, 200)
 
         # overview
         r = self.client.get("/api/overview")

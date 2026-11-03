@@ -87,6 +87,17 @@ except TypeError:
         await _lifespan_cm.__aexit__(None, None, None)
 
 
+@app.middleware("http")
+async def _cache_control_middleware(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.startswith(("/js/", "/css/", "/index.html")):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 # ------------------------------------------------------------------ helpers
 
 def _mask(value: str) -> str:
@@ -253,7 +264,7 @@ def create_notebook(body: dict):
         slug = f"{slug}-{datetime.now().strftime('%H%M%S')}"
     now = _now()
     account_id = body.get("account_id")
-    if account_id is not None and config.get_account(account_id) is None:
+    if account_id is not None and db.get_account(account_id) is None:
         account_id = None
     accelerator = str(body.get("accelerator", "auto")).strip().lower() or "auto"
     if accelerator not in kaggle_client.ACCELERATORS:
@@ -298,7 +309,7 @@ def update_notebook(nid: int, body: dict):
         if account_id is None:
             updates.append("account_id=%s")
             values.append(None)
-        elif config.get_account(account_id) is not None:
+        elif db.get_account(account_id) is not None:
             updates.append("account_id=%s")
             values.append(int(account_id))
         else:
@@ -479,9 +490,34 @@ def global_logs(limit: int = 200):
 
 @app.get("/api/accounts", dependencies=[Depends(require_auth)])
 def list_accounts():
-    """Accounts come only from environment variables (KAGGLE_ACCOUNTS or
-    KAGGLE_USERNAME/KAGGLE_KEY). Read-only — no dashboard credential entry."""
-    return config.accounts()
+    return db.list_accounts()
+
+
+@app.post("/api/accounts", dependencies=[Depends(require_auth)])
+def add_account(body: dict):
+    name = str(body.get("name", "")).strip()
+    username = str(body.get("username", "")).strip()
+    key = str(body.get("api_key", "")).strip()
+    if not name or not username or not key:
+        raise HTTPException(status_code=400, detail="name, username and API key are required")
+    aid = db.add_account(name, username, key)
+    return {"id": aid, "name": name, "username": username}
+
+
+@app.put("/api/accounts/{aid}/default", dependencies=[Depends(require_auth)])
+def set_account_default(aid: int):
+    if not db.fetch_one("SELECT 1 FROM kaggle_accounts WHERE id=%s", (aid,)):
+        raise HTTPException(status_code=404, detail="account not found")
+    db.set_default_account(aid)
+    return {"ok": True}
+
+
+@app.delete("/api/accounts/{aid}", dependencies=[Depends(require_auth)])
+def delete_account(aid: int):
+    if not db.fetch_one("SELECT 1 FROM kaggle_accounts WHERE id=%s", (aid,)):
+        raise HTTPException(status_code=404, detail="account not found")
+    db.delete_account(aid)
+    return {"ok": True}
 
 
 # ------------------------------------------------------------------ backup
@@ -495,6 +531,7 @@ def export():
         "notebooks": db.fetch_all("SELECT id, slug, title, description, source, schedule, enabled, created_at, updated_at, last_run_at FROM notebooks"),
         "jobs": db.fetch_all("SELECT id, notebook_id, kind, status, kaggle_status, error, created_at, started_at, finished_at, meta FROM jobs"),
         "job_logs": db.fetch_all("SELECT id, job_id, ts, line FROM job_logs"),
+        "accounts": db.fetch_all("SELECT id, name, username, is_default, created_at FROM kaggle_accounts"),
         "settings": [{"key": r["key"], "value": "***" if "key" in r["key"] else r["value"]}
                      for r in db.fetch_all("SELECT key, value FROM settings")],
     }
