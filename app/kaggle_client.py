@@ -384,8 +384,6 @@ class KaggleFacade:
             params={
                 "userName": user,
                 "kernelSlug": slug,
-                "user": user,
-                "kernel": slug,
             },
         )
         self._raise_for(resp)
@@ -404,8 +402,6 @@ class KaggleFacade:
             params={
                 "userName": user,
                 "kernelSlug": slug,
-                "user": user,
-                "kernel": slug,
             },
         )
         try:
@@ -435,8 +431,6 @@ class KaggleFacade:
             params={
                 "userName": user,
                 "kernelSlug": slug,
-                "user": user,
-                "kernel": slug,
             },
         )
         self._raise_for(resp)
