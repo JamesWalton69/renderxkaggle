@@ -1,4 +1,4 @@
-/* Settings view: AI provider, Kaggle identity, admin password, backup export. */
+/* Settings view: Kaggle accounts (env), admin password, backup export. */
 "use strict";
 
 window.Views = window.Views || {};
@@ -25,29 +25,6 @@ window.Views.settings = {
 
     root.innerHTML = `
       <div class="settings-grid">
-        <div class="card">
-          <div class="card-title">AI assistant</div>
-          <div class="field">
-            <label>Base URL</label>
-            <input id="s-ai-url" placeholder="https://api.openai.com/v1" value="${UI.esc(s.ai_base_url)}">
-          </div>
-          <div class="field">
-            <label>Model ID</label>
-            <input id="s-ai-model" placeholder="gpt-4o-mini" value="${UI.esc(s.ai_model)}">
-          </div>
-          <div class="field">
-            <label>API key ${s.ai_api_key_set ? `(${UI.esc(s.ai_api_key_origin)} · stored)` : "(not set)"}</label>
-            <input id="s-ai-key" type="password" placeholder="••••••••" autocomplete="new-password">
-          </div>
-          <div class="field">
-            <label>Temperature</label>
-            <input id="s-ai-temp" type="number" step="0.1" min="0" max="1.5" value="${Number(s.ai_temperature) || 0}">
-          </div>
-          <button class="btn btn-primary" id="s-ai-save" type="button">Save AI settings</button>
-          <div class="form-error" id="s-ai-err"></div>
-          <p style="color:var(--faint);font-size:12px;margin-top:12px">Any OpenAI-compatible chat completions endpoint works. The assistant calls it directly; keys are encrypted at rest.</p>
-        </div>
-
         <div class="card">
           <div class="card-title">Kaggle accounts ·${accounts.length}</div>
           ${accounts.length ? `<div style="margin-bottom:12px">
@@ -82,25 +59,7 @@ window.Views.settings = {
         </div>
       </div>`;
 
-    root.querySelector("#s-ai-save").onclick = () => this._saveAI(root);
     root.querySelector("#s-pw-save").onclick = () => this._savePw(root);
-  },
-
-  async _saveAI(root) {
-    const body = {
-      ai_base_url: document.getElementById("s-ai-url").value.trim(),
-      ai_model: document.getElementById("s-ai-model").value.trim(),
-      ai_temperature: Number(document.getElementById("s-ai-temp").value) || 0,
-    };
-    const key = document.getElementById("s-ai-key").value.trim();
-    if (key) body.ai_api_key = key;
-    try {
-      await API.put("/api/settings", body);
-      UI.toast("AI settings saved");
-      this._load(root);
-    } catch (e) {
-      document.getElementById("s-ai-err").textContent = e.message;
-    }
   },
 
   async _savePw(root) {

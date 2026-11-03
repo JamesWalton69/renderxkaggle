@@ -55,24 +55,6 @@ CREATE TABLE IF NOT EXISTS job_logs (
   line   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_job_logs_job ON job_logs(job_id, id);
-CREATE TABLE IF NOT EXISTS approvals (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  status        TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected
-  tool          TEXT NOT NULL,
-  params        TEXT NOT NULL DEFAULT '{}',
-  reason        TEXT NOT NULL DEFAULT '',
-  created_at    TEXT NOT NULL,
-  decided_at    TEXT,
-  decided_by    TEXT,
-  result_note   TEXT NOT NULL DEFAULT ''
-);
-CREATE TABLE IF NOT EXISTS chat_messages (
-  id    INTEGER PRIMARY KEY AUTOINCREMENT,
-  role  TEXT NOT NULL,            -- user | assistant | note
-  content TEXT NOT NULL,
-  ts    TEXT NOT NULL,
-  meta  TEXT NOT NULL DEFAULT '{}' -- tool events for UI
-);
 """
 
 
@@ -96,7 +78,6 @@ def init_db(db_path=None) -> None:
         conn.commit()
     finally:
         conn.close()
-    _seed_defaults(db_path)
 
 
 def _ensure_columns(conn: sqlite3.Connection) -> None:
@@ -108,13 +89,6 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
     if "internet" not in cols:
         conn.execute("ALTER TABLE notebooks ADD COLUMN internet INTEGER NOT NULL DEFAULT 1")
     conn.commit()
-
-
-def _seed_defaults(db_path=None) -> None:
-    """Bootstrap settings from environment when the DB is empty."""
-    for key, value in config.AI_DEFAULTS.items():
-        if value and not get_setting(key, db_path=db_path, default=""):
-            set_setting(key, value, db_path=db_path)
 
 
 # ---------------------------------------------------------------- primitives

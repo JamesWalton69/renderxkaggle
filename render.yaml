@@ -23,11 +23,5 @@ services:
         sync: false        # optional legacy fallbacks (single account) when KAGGLE_ACCOUNTS is unset
       - key: KAGGLE_KEY
         sync: false
-      - key: AI_BASE_URL
-        sync: false        # optional defaults; dashboard Settings can override
-      - key: AI_API_KEY
-        sync: false
-      - key: AI_MODEL
-        sync: false
       - key: POLL_SECONDS
         value: "6"

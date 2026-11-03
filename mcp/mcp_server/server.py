@@ -50,7 +50,7 @@ def _client() -> ManagerClient:
 
 @mcp.tool()
 def manager_status() -> dict:
-    """Current engine status: job counts, active job, pending approvals, recent jobs."""
+    """Current engine status: job counts, active job, recent jobs."""
     return _client().overview()
 
 
@@ -101,21 +101,9 @@ def requeue_job(job_id: int) -> dict:
 
 
 @mcp.tool()
-def list_approvals() -> dict:
-    """Pending AI-assistant approvals awaiting a human decision. Returns {"items": [...]}."""
-    return {"items": _client().approvals()}
-
-
-@mcp.tool()
 def list_accounts() -> dict:
     """Configured Kaggle accounts (name, username, has_key, is_default). Returns {"items": [...]}."""
     return {"items": _client().accounts()}
-
-
-@mcp.tool()
-def decide_approval(approval_id: int, approve: bool) -> dict:
-    """Approve (approve=true) or reject a pending approval request."""
-    return _client().decide_approval(approval_id, approve)
 
 
 if __name__ == "__main__":

@@ -1,9 +1,9 @@
 # Kaggle Cloud Manager
 
-Manage **Kaggle notebook executions remotely** from a polished web dashboard — with a
-one or more authorized Kaggle identities (choose per notebook), a persistent job queue (one active execution at a
-time), and an AI assistant that plans tasks itself but **always asks for approval
-before consequential actions**.
+Manage **Kaggle notebook executions remotely** from a polished web dashboard —
+with one or more authorized Kaggle identities (choose per notebook), a persistent
+job queue (one active execution at a time), and an **MCP server** that exposes
+the same control plane to any AI agent (OpenCode, Claude Desktop, Cursor, …).
 
 Built for **Render's free tier**: one web service, SQLite, no external infrastructure,
 no build step.
@@ -19,22 +19,20 @@ no build step.
   Browser ────────►│  FastAPI + uvicorn (single worker)                │
   dashboard (SPA)  │   ├── REST API (/api/*)  ← auth via session cookie │
                     │   ├── Static dashboard (/  — index.html + JS)     │
-                    │   ├── AI Agent (app/agent.py)                     │
-                    │   │    └─ LLM (your OpenAI-compatible endpoint)   │
                     │   ├── Job Worker (app/worker.py)  async loop      │
                     │   │    ├─ serial queue picker                     │
                     │   │    ├─ Kaggle polling / status transitions     │
                     │   │    └─ cron scheduler (app/scheduler.py)       │
                     │   └── SQLite (WAL) — jobs, notebooks, logs,       │
-                    │        approvals, chat, settings, sessions        │
-                    └───────────┬──────────────┬───────────────────────┘
-                                │              │
-                     ┌──────────▼─────┐  ┌────▼──────────────┐
-                     │ Kaggle Kernels │  │ AI provider (user-│
-                     │ API v1 (REST) │  │ supplied: base URL │
-                     │ (push/status/ │  │ + key + model)    │
-                     │  output/log)  │  └───────────────────┘
-                     └────────────────┘
+                    │        settings, sessions                         │
+                    └───────────┬──────────────────────────────────────┘
+                                │
+                     ┌──────────▼─────┐        ┌──────────────────────┐
+                     │ Kaggle Kernels │        │ MCP server (mcp/) —  │
+                     │ API v1 (REST) │        │ primary agent access: │
+                     │ (push/status/ │        │ notebooks, jobs,      │
+                     │  output/log)  │        │ accounts → tools      │
+                     └────────────────┘        └──────────────────────┘
 ```
 
 **Key decisions**
@@ -45,28 +43,22 @@ no build step.
 | Database | SQLite (stdlib, WAL) | Zero infra, restart-safe, file-backed |
 | Queue | DB rows + in-process worker | Persistent across restarts; one active execution enforced by the DB |
 | Kaggle | Direct REST client over official Kernels API v1 (`app/kaggle_client.py`) | No heavy SDK; full control over retries and errors |
-| AI agent | OpenAI-compatible `/chat/completions` + JSON action protocol | Works with any provider (base URL/key/model are yours); no vendor lock-in |
-| Safety | Hardcoded sensitive-tool gate → `approvals` table | The model cannot bypass approval; the gate is code, not prompt |
+| MCP | MCP server (`mcp/`) exposing the manager as tools | Primary agent access — same API the dashboard uses, no browser needed |
 | Frontend | Vanilla JS SPA served by FastAPI | No build step, no node toolchain on Render |
 | Auth | Single admin password, scrypt hash, signed session cookie | Enough for a private single-owner control plane |
 
 ---
 
-## The AI assistant (hybrid autonomy)
+## Access via MCP (primary agent path)
 
-The assistant receives a system prompt describing the platform and **16 tools**,
-e.g. `list_notebooks`, `create_notebook`, `submit_notebook`, `cancel_job`,
-`requeue_job`, `update_schedule`, `get_job_status`, `get_job_logs`, `get_overview`.
-
-- It plans freely and emits JSON actions; the server executes them and feeds the
-  results back — so the model adapts mid-task.
-- **Sensitive actions are gated by the executor, not by the model:**
-  `submit_notebook`, `cancel_job`, `requeue_job`, `delete_notebook`,
-  `update_schedule`. When the agent requests one, an approval record is created,
-  the agent pauses, and the dashboard's **Approvals** tab shows the request.
-  Approve or reject → the agent resumes and continues.
-- Limits enforced independently: turn budget, tool whitelist, no credential
-  exposure, one execution at a time.
+The dashboard has no built-in AI assistant. Instead, the repo ships an **MCP
+server** (`mcp/`) that turns the manager's REST API into tools — `list_notebooks`,
+`create_notebook`, `run_notebook`, `list_jobs`, `get_job`,
+`stop_or_cancel_job`, `requeue_job`, `list_accounts`, `manager_status`. Any
+MCP-capable agent (OpenCode, Claude Desktop, Cursor, …) can drive the whole
+manager through these tools. See `mcp/README.md` for setup and the full tool
+list. The server holds `ADMIN_PASSWORD` internally; agents never see the
+password or session cookie.
 
 ---
 
@@ -82,7 +74,8 @@ queued → running → success
 
 - Everything is stored in SQLite, so an execution survives restarts.
 - On boot the worker reconciles: any job left in `running`/`stopping` becomes
-  `interrupted` with a log entry. You (or the agent) can requeue it.
+  `interrupted` with a log entry. You can requeue it from the dashboard or via
+  the MCP `requeue_job` tool.
 - **Stopping a running job:** the Kaggle API has no abort endpoint, so stop
   works by first snapshotting the current outputs, then pushing an immediate-exit
   "stub" version of the notebook. The job flips to `stopping`, ends as
@@ -133,14 +126,13 @@ app/
   security.py        scrypt passwords, session tokens, AES-GCM secret encryption
   scheduler.py       minimal 5-field cron matcher
   kaggle_client.py   Kaggle Kernels API v1 client (httpx)
-  agent.py           AI assistant: system prompt, JSON protocol, executor, approval gate
   worker.py          background worker: queue, polling, reconcile, cron firing
 static/
   index.html         dashboard shell
   css/app.css        design system
   js/api.js, ui.js, app.js, views/*.js
 tests/
-  test_scheduler.py  test_security.py  test_agent.py  test_worker.py
+  test_scheduler.py  test_security.py  test_config_accounts.py  test_worker.py
 android/
   native Android app (Kotlin + Jetpack Compose) — see android/README.md
 mcp/
@@ -194,7 +186,6 @@ than the web service.
 | `KAGGLE_ACCOUNTS` | **for Kaggle** | JSON array of accounts: `[{"name":"Account A","username":"u1","key":"k1"},...]`. IDs are 1-based by list order; the first is the default. This is the **only** way to configure Kaggle credentials — the dashboard has no credential entry. |
 | `KAGGLE_USERNAME` / `KAGGLE_KEY` | optional | Legacy fallback: single account used when `KAGGLE_ACCOUNTS` is unset/invalid. |
 | `KAGGLE_API_TOKEN` | optional | Bearer-token fallback when no username/key pair is configured. |
-| `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | optional | Pre-fill for the assistant; can also be set/edited in Settings. |
 
 **4. Deploy** → wait for the build to finish, then open the service URL.
 
@@ -202,11 +193,10 @@ than the web service.
 1. Sign in with your admin password.
 2. Set `KAGGLE_ACCOUNTS` (both accounts) in **Environment** — the dashboard
    shows them read-only under **Settings → Kaggle accounts**.
-3. **Settings → AI assistant** → paste your provider's base URL, API key, and
-   model ID.
-4. Create a notebook: **Notebooks → New notebook** → pick which Kaggle account
+3. Create a notebook: **Notebooks → New notebook** → pick which Kaggle account
    should run it.
-5. Press **Run** — watch it appear in **Jobs**, then follow the logs.
+4. Press **Run** — watch it appear in **Jobs**, then follow the logs.
+5. (Optional) Connect the MCP server to your agent — see `mcp/README.md`.
 
 ### Two Kaggle accounts
 
@@ -228,8 +218,7 @@ after deploy):
 - [ ] Set `ADMIN_PASSWORD` (or read the generated one).
 - [ ] Set `KAGGLE_ACCOUNTS` with your **Kaggle credentials** (env-only — see
       "Deploy to Render").
-- [ ] Add your **AI provider** base URL, key, and model (Settings → AI assistant) —
-      any OpenAI-compatible endpoint.
+- [ ] (Optional) Connect the **MCP server** to your agent — see `mcp/README.md`.
 - [ ] First live run: submit a small notebook and verify the Kaggle API shapes.
       The client in `app/kaggle_client.py` isolates every endpoint so any
       response-shape mismatch is fixable in one file. Likely behaviors to note:

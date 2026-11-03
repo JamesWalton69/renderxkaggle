@@ -12,9 +12,7 @@ OkHttp, no Retrofit/serialization libs.
   internet toggle).
 - **Jobs** — filter, detail with logs, Cancel/Stop (running/stopping → stub
   push) and Requeue (terminal statuses).
-- **Approvals** — approve/reject the AI agent's sensitive actions.
-- **Chat** — talk to the assistant; pending-approval notices link to Approvals.
-- Handles Render free-tier sleep (60s wake-up allowance) and LLM latency.
+- Handles Render free-tier sleep (60s wake-up allowance).
 
 ## Build & run
 
@@ -33,6 +31,9 @@ OkHttp, no Retrofit/serialization libs.
   `https://renderxkaggle.onrender.com`).
 - The backend must be deployed and reachable; sign in with the same
   `ADMIN_PASSWORD`.
+- There is no in-app AI assistant; the backend exposes no agent/approval
+  endpoints. Drive automation through the MCP server instead (see the repo-root
+  `README.md` → "Access via MCP").
 
 ## Notes
 

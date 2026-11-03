@@ -16,7 +16,6 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import agent as agent_mod
 from . import config, db, kaggle_client, scheduler, security, worker as worker_mod
 from .kaggle_client import KaggleFacade
 
@@ -57,27 +56,12 @@ def _bootstrap_admin() -> None:
     db.set_setting("admin_password_hash", security.hash_password(password))
 
 
-def _ai_settings_provider() -> dict:
-    enc = db.get_setting("ai_api_key", "")
-    try:
-        key = security.decrypt_secret(enc) if enc else ""
-    except Exception:
-        key = ""
-    return {
-        "ai_base_url": db.get_setting("ai_base_url", ""),
-        "ai_api_key": key,
-        "ai_model": db.get_setting("ai_model", ""),
-        "ai_temperature": db.get_setting("ai_temperature", 0.2),
-    }
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
     _bootstrap_admin()
     facade = KaggleFacade()
     app.state.facade = facade
-    app.state.agent = agent_mod.Agent(facade, ai_settings_provider=_ai_settings_provider)
     app.state.worker = worker_mod.Worker(facade)
     await app.state.worker.start()
     try:
@@ -180,41 +164,11 @@ def me(request: Request):
 
 @app.get("/api/settings", dependencies=[Depends(require_auth)])
 def get_settings():
-    enc_key = db.get_setting("ai_api_key", "")
     return {
-        "ai_base_url": db.get_setting("ai_base_url", ""),
-        "ai_model": db.get_setting("ai_model", ""),
-        "ai_temperature": db.get_setting("ai_temperature", 0.2),
-        "ai_api_key_set": bool(enc_key) or bool(config.AI_DEFAULTS["ai_api_key"]),
-        "ai_api_key_origin": "dashboard" if enc_key else ("env" if config.AI_DEFAULTS["ai_api_key"] else "none"),
         "data_dir": str(config.DATA_DIR),
         "version": config.APP_VERSION,
         "poll_seconds": config.POLL_SECONDS,
     }
-
-
-@app.put("/api/settings", dependencies=[Depends(require_auth)])
-def put_settings(body: dict):
-    allowed = {"ai_base_url", "ai_api_key", "ai_model", "ai_temperature"}
-    for key, value in body.items():
-        if key not in allowed:
-            raise HTTPException(status_code=400, detail=f"unknown setting {key}")
-        if value is None:
-            continue
-        if key in ("ai_base_url", "ai_model") and not str(value).strip():
-            raise HTTPException(status_code=400, detail=f"{key} cannot be empty")
-        if key == "ai_api_key":
-            if str(value).strip():
-                db.set_setting(key, security.encrypt_secret(str(value).strip()))
-            continue
-        if key == "ai_temperature":
-            try:
-                db.set_setting(key, max(0.0, min(float(value), 1.5)))
-            except (TypeError, ValueError):
-                raise HTTPException(status_code=400, detail="temperature must be a number")
-            continue
-        db.set_setting(key, str(value).strip())
-    return {"ok": True}
 
 
 @app.post("/api/settings/password", dependencies=[Depends(require_auth)])
@@ -247,7 +201,6 @@ def overview():
         "WHERE created_at >= datetime('now', '-13 days') GROUP BY day ORDER BY day"
     )
     nb_count = db.fetch_one("SELECT COUNT(*) AS n FROM notebooks")
-    pending_approvals = db.fetch_one("SELECT COUNT(*) AS n FROM approvals WHERE status='pending'")
     at = "active" if active and active["status"] == "running" else ("queued" if active and active["status"] == "queued" else "idle")
     return {
         "counts": counts,
@@ -256,7 +209,6 @@ def overview():
         "notebooks": nb_count["n"],
         "active_job": _job_public(active) if active else None,
         "engine_state": at,
-        "pending_approvals": pending_approvals["n"],
         "recent_jobs": [_job_public(j) for j in recent],
         "series": series_rows,
         "version": config.APP_VERSION,
@@ -530,70 +482,6 @@ def list_accounts():
     return config.accounts()
 
 
-# ------------------------------------------------------------------ approvals
-
-@app.get("/api/approvals", dependencies=[Depends(require_auth)])
-def list_approvals(status: str = "pending"):
-    rows = db.fetch_all(
-        "SELECT * FROM approvals WHERE status=? ORDER BY id DESC LIMIT 100", (status,)
-    )
-    for r in rows:
-        try:
-            r["params"] = json.loads(r["params"] or "{}")
-        except ValueError:
-            r["params"] = {}
-    return rows
-
-
-@app.post("/api/approvals/{aid}/decide", dependencies=[Depends(require_auth)])
-def decide_approval(aid: int, body: dict):
-    approve = bool(body.get("approve"))
-    approval = db.fetch_one("SELECT * FROM approvals WHERE id=?", (aid,))
-    if not approval:
-        raise HTTPException(status_code=404, detail="approval not found")
-    if approval["status"] != "pending":
-        raise HTTPException(status_code=409, detail="approval already decided")
-    try:
-        result = app.state.agent.resume(aid, approve)
-    except agent_mod.AgentError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return {"ok": True, "agent": result}
-
-
-# ------------------------------------------------------------------ agent
-
-@app.post("/api/agent/message", dependencies=[Depends(require_auth)])
-async def agent_message(body: dict):
-    text = str(body.get("text", ""))
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="message is empty")
-    import asyncio
-    try:
-        result = await asyncio.to_thread(app.state.agent.run, text)
-    except agent_mod.AgentConfigError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except agent_mod.AgentLLMError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
-    except agent_mod.AgentError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return result
-
-
-@app.get("/api/agent/history", dependencies=[Depends(require_auth)])
-def agent_history():
-    rows = db.fetch_all(
-        "SELECT role, content, ts, meta FROM chat_messages ORDER BY id"
-    )
-    out = []
-    for r in rows:
-        try:
-            meta = json.loads(r["meta"] or "{}")
-        except ValueError:
-            meta = {}
-        out.append({"role": r["role"], "content": r["content"], "ts": r["ts"], "meta": meta})
-    return out
-
-
 # ------------------------------------------------------------------ backup
 
 @app.get("/api/export", dependencies=[Depends(require_auth)])
@@ -605,9 +493,7 @@ def export():
         "notebooks": db.fetch_all("SELECT id, slug, title, description, source, schedule, enabled, created_at, updated_at, last_run_at FROM notebooks"),
         "jobs": db.fetch_all("SELECT id, notebook_id, kind, status, kaggle_status, error, created_at, started_at, finished_at, meta FROM jobs"),
         "job_logs": db.fetch_all("SELECT id, job_id, ts, line FROM job_logs"),
-        "approvals": db.fetch_all("SELECT id, status, tool, params, reason, created_at, decided_at, decided_by FROM approvals"),
-        "chat": db.fetch_all("SELECT id, role, content, ts, meta FROM chat_messages"),
-        "settings": [{"key": r["key"], "value": "***" if r["key"] in ("ai_api_key", "kaggle_key") else r["value"]}
+        "settings": [{"key": r["key"], "value": "***" if "key" in r["key"] else r["value"]}
                      for r in db.fetch_all("SELECT key, value FROM settings")],
     }
     import urllib.parse

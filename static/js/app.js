@@ -18,7 +18,6 @@ const App = {
     }
     window.addEventListener("hashchange", () => this.route());
     window.addEventListener("kc-unauthorized", () => this.showLogin());
-    window.addEventListener("kc-approvals-changed", () => this.refreshBadges());
     window.addEventListener("kc-jobs-changed", () => this.refreshBadges());
     setInterval(() => this.refreshBadges(), 15000);
   },
@@ -97,15 +96,7 @@ const App = {
 
   async refreshBadges() {
     try {
-      const [ov, approvals] = await Promise.all([
-        API.get("/api/overview"),
-        API.get("/api/approvals?status=pending"),
-      ]);
-      const n = approvals.length;
-      const badgeSide = document.getElementById("approval-badge");
-      const badgeTop = document.getElementById("approval-badge-top");
-      if (badgeSide) { badgeSide.hidden = n === 0; badgeSide.textContent = n; }
-      if (badgeTop) { badgeTop.hidden = n === 0; badgeTop.textContent = n; }
+      const ov = await API.get("/api/overview");
       const dot = document.getElementById("engine-dot");
       const label = document.getElementById("engine-label");
       if (dot) {

@@ -34,19 +34,9 @@ SESSION_MAX_AGE = 30 * 24 * 3600  # 30 days
 
 # Limits.
 MAX_LOG_LINES_PER_JOB = 2000
-MAX_CHAT_HISTORY = 60
-MAX_AGENT_TURNS = 14
-LLM_TIMEOUT_SECONDS = 120
 
 POLL_SECONDS = float(os.environ.get("POLL_SECONDS", "6"))
 WORKER_MAX_POLL_FAILURES = 3
-
-AI_DEFAULTS = {
-    "ai_base_url": os.environ.get("AI_BASE_URL", ""),
-    "ai_api_key": os.environ.get("AI_API_KEY", ""),
-    "ai_model": os.environ.get("AI_MODEL", ""),
-    "ai_temperature": os.environ.get("AI_TEMPERATURE", "0.2"),
-}
 
 # ---------------------------------------------------------------- Kaggle accounts (env-only)
 

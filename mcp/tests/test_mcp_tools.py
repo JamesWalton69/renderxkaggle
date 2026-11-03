@@ -49,17 +49,9 @@ class FakeClient:
         self.calls.append(("requeue", job_id))
         return {"ok": True}
 
-    def approvals(self):
-        self.calls.append("approvals")
-        return [{"id": 3, "tool": "run"}]
-
     def accounts(self):
         self.calls.append("accounts")
         return [{"id": 1, "name": "acc", "username": "u", "has_key": True, "is_default": True}]
-
-    def decide_approval(self, approval_id, approve):
-        self.calls.append(("decide", approval_id, approve))
-        return {"ok": True}
 
 
 def test_tools_route_to_client():
@@ -75,14 +67,11 @@ def test_tools_route_to_client():
     assert srv.get_job(7)["id"] == 7
     assert srv.stop_or_cancel_job(1)["message"] == "stopping"
     assert srv.requeue_job(2)["ok"] is True
-    assert srv.list_approvals()["items"][0]["id"] == 3
     assert srv.list_accounts()["items"][0]["is_default"] is True
-    assert srv.decide_approval(3, True)["ok"] is True
 
     assert ("create", "t", "gpu_t4", False) in f.calls
     assert ("run", 5, None) in f.calls and ("run", 5, "why") in f.calls
     assert ("jobs", "queued", 50) in f.calls
-    assert ("decide", 3, True) in f.calls
     assert ("cancel", 1) in f.calls and ("requeue", 2) in f.calls
 
 

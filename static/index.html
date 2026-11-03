@@ -16,7 +16,7 @@
         <span class="brand-mark">KC</span>
         <span class="brand-name">Kaggle <em>Cloud</em> Manager</span>
       </div>
-      <p class="login-sub">Remote notebook execution · one identity · approved by you</p>
+      <p class="login-sub">Remote notebook execution · one identity · drive it via MCP</p>
       <form id="login-form" autocomplete="off">
         <label for="password">Admin password</label>
         <input type="password" id="password" name="password" placeholder="••••••••" required>
@@ -37,12 +37,8 @@
 
       <nav class="nav" id="nav">
         <a href="#/overview" class="nav-item" data-view="overview">Overview</a>
-        <a href="#/chat" class="nav-item" data-view="chat">Assistant</a>
         <a href="#/notebooks" class="nav-item" data-view="notebooks">Notebooks</a>
         <a href="#/jobs" class="nav-item" data-view="jobs">Jobs</a>
-        <a href="#/approvals" class="nav-item" data-view="approvals">
-          Approvals <span class="badge badge-amber nav-badge" id="approval-badge" hidden>0</span>
-        </a>
         <a href="#/settings" class="nav-item" data-view="settings">Settings</a>
       </nav>
 
@@ -58,9 +54,6 @@
         <button class="btn btn-ghost icon-btn menu-btn" id="menu-btn" type="button" aria-label="Menu">☰</button>
         <h1 class="page-title" id="page-title">Overview</h1>
         <div class="topbar-right">
-          <a href="#/approvals" class="btn btn-ghost btn-sm" id="top-approvals">
-            Approvals <span class="badge badge-amber" id="approval-badge-top" hidden>0</span>
-          </a>
           <button class="btn btn-primary btn-sm" id="quick-run" type="button">Run notebook</button>
         </div>
       </header>
@@ -74,10 +67,8 @@
   <script src="/js/api.js"></script>
   <script src="/js/ui.js"></script>
   <script src="/js/views/overview.js"></script>
-  <script src="/js/views/chat.js"></script>
   <script src="/js/views/notebooks.js"></script>
   <script src="/js/views/jobs.js"></script>
-  <script src="/js/views/approvals.js"></script>
   <script src="/js/views/settings.js"></script>
   <script src="/js/app.js"></script>
 </body>

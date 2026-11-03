@@ -31,8 +31,6 @@ enum class Tab(val label: String, val icon: String) {
     Overview("Overview", "📊"),
     Notebooks("Notebooks", "📓"),
     Jobs("Jobs", "☰"),
-    Approvals("Approvals", "✓"),
-    Chat("Chat", "🤖"),
 }
 
 @Composable
@@ -73,8 +71,6 @@ fun MainScreen(onLogout: () -> Unit) {
                 Tab.Overview -> OverviewTab()
                 Tab.Notebooks -> NotebooksTab()
                 Tab.Jobs -> JobsTab()
-                Tab.Approvals -> ApprovalsTab()
-                Tab.Chat -> ChatTab(onOpenApprovals = { tab = Tab.Approvals })
             }
         }
     }

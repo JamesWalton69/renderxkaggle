@@ -53,7 +53,6 @@ window.Views.overview = {
         <div class="card stat-card"><div class="stat-value">${ov.total_jobs}</div><div class="stat-label">total jobs</div></div>
         <div class="card stat-card"><div class="stat-value stat-accent">${ov.success_rate == null ? "—" : ov.success_rate + "%"}</div><div class="stat-label">success rate</div></div>
         <div class="card stat-card"><div class="stat-value">${ov.notebooks}</div><div class="stat-label">notebooks</div></div>
-        <div class="card stat-card"><div class="stat-value">${ov.pending_approvals}</div><div class="stat-label">pending approvals</div></div>
       </div>
 
       <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-top:16px" class="ov-grid">

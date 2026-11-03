@@ -35,15 +35,6 @@ object Api {
             .build()
     }
 
-    // /api/agent/message runs the full LLM loop synchronously (up to 120s).
-    private val chatClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(130, TimeUnit.SECONDS)
-            .callTimeout(150, TimeUnit.SECONDS)
-            .build()
-    }
-
     fun init(context: Context) {
         session = SessionStore(context)
     }
@@ -88,21 +79,8 @@ object Api {
         val notebookCount: Int,
         val activeJob: Job?,
         val engineState: String,
-        val pendingApprovals: Int,
         val recentJobs: List<Job>,
     )
-
-    data class Approval(
-        val id: Int,
-        val tool: String,
-        val params: String,
-        val reason: String,
-        val createdAt: String,
-    )
-
-    data class ChatMsg(val role: String, val content: String, val ts: String)
-
-    data class AgentReply(val answer: String?, val pendingApproval: Int?, val message: String?)
 
     // ---------------------------------------------------------------- plumbing
 
@@ -189,7 +167,6 @@ object Api {
             notebookCount = o.optInt("notebooks"),
             activeJob = if (o.isNull("active_job")) null else parseJob(o.optJSONObject("active_job")),
             engineState = o.optString("engine_state"),
-            pendingApprovals = o.optInt("pending_approvals"),
             recentJobs = recent,
         )
     }
@@ -257,46 +234,5 @@ object Api {
 
     suspend fun requeueJob(id: Int) = withContext(Dispatchers.IO) {
         exec(client, build("POST", "/api/jobs/$id/requeue", JSONObject()))
-    }
-
-    // ---------------------------------------------------------------- approvals
-
-    suspend fun approvals(): List<Approval> = withContext(Dispatchers.IO) {
-        val arr = execArray(client, build("GET", "/api/approvals?status=pending"))
-        (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
-            Approval(
-                id = o.optInt("id"),
-                tool = o.optString("tool"),
-                params = o.opt("params").toString(),
-                reason = o.optString("reason"),
-                createdAt = o.optString("created_at"),
-            )
-        }
-    }
-
-    suspend fun decideApproval(id: Int, approve: Boolean): String = withContext(Dispatchers.IO) {
-        val body = JSONObject().put("approve", approve)
-        val o = exec(client, build("POST", "/api/approvals/$id/decide", body))
-        o.optJSONObject("agent")?.optString("answer") ?: "decided"
-    }
-
-    // ---------------------------------------------------------------- agent
-
-    suspend fun chat(text: String): AgentReply = withContext(Dispatchers.IO) {
-        val o = exec(chatClient, build("POST", "/api/agent/message", JSONObject().put("text", text)))
-        AgentReply(
-            answer = o.optString("answer").ifEmpty { null },
-            pendingApproval = if (o.isNull("pending_approval")) null else o.optInt("pending_approval"),
-            message = o.optString("message").ifEmpty { null },
-        )
-    }
-
-    suspend fun history(): List<ChatMsg> = withContext(Dispatchers.IO) {
-        val arr = execArray(client, build("GET", "/api/agent/history"))
-        (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
-            ChatMsg(role = o.optString("role"), content = o.optString("content"), ts = o.optString("ts"))
-        }
     }
 }

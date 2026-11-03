@@ -81,7 +81,6 @@ fun OverviewTab() {
                 StatChip("jobs", ov.totalJobs.toString())
                 StatChip("ok", ov.successRate?.let { "${it.toInt()}%" } ?: "—")
                 StatChip("nbs", ov.notebookCount.toString())
-                StatChip("approvals", ov.pendingApprovals.toString())
             }
 
             // active job card (prefer newest running from recent; fall back to engine active)

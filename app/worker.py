@@ -6,7 +6,7 @@ Design
 - Serialization comes from the database, not from memory: the worker only
   starts a new job when no other job is in `running`. If the process dies,
   startup reconciliation flips stray `running` jobs to `interrupted`, and the
-  owner (or the AI agent) can requeue them. `uncertain` jobs (transient
+  owner can requeue them (dashboard or MCP). `uncertain` jobs (transient
   network failures while polling Kaggle) auto-retry after a cooldown.
 - Every mutation is logged to `job_logs`.
 """

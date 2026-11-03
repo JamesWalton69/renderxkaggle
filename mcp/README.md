@@ -1,9 +1,10 @@
 # Kaggle Cloud Manager — MCP server (agent router)
 
 An [MCP](https://modelcontextprotocol.io) server that turns the Kaggle Cloud
-Manager's REST API into tools. Any MCP-capable agent (Claude Desktop, OpenCode,
-Cursor, …) can then do Kaggle work through the manager: run/stop notebooks,
-watch jobs, and approve/reject the assistant's actions.
+Manager's REST API into tools. It is a **primary access path**: any MCP-capable
+agent (Claude Desktop, OpenCode, Cursor, …) can create/run/stop notebooks, watch
+jobs, and manage accounts — mirroring what the web dashboard does, without the
+browser. The dashboard has no built-in AI assistant; connect one here instead.
 
 The server holds the admin password (`ADMIN_PASSWORD` env) and handles login →
 `kc_session` cookie internally (refresh on 401). Agents never see credentials.
@@ -12,7 +13,7 @@ The server holds the admin password (`ADMIN_PASSWORD` env) and handles login →
 
 | Tool | What it does |
 |---|---|
-| `manager_status` | Engine state, counts, active job, pending approvals, recent jobs |
+| `manager_status` | Engine state, counts, active job, recent jobs |
 | `list_notebooks` | All notebooks + last-run status |
 | `create_notebook` | Create a notebook (title, code, accelerator, internet) |
 | `run_notebook` | Queue a run → returns job id |
@@ -20,15 +21,10 @@ The server holds the admin password (`ADMIN_PASSWORD` env) and handles login →
 | `get_job` | Job detail including logs |
 | `stop_or_cancel_job` | Cancel queued/uncertain, or stop running/stopping (stub push) |
 | `requeue_job` | Requeue a terminal job |
-| `list_approvals` | Pending AI-assistant approvals |
-| `decide_approval` | Approve/reject an approval |
 | `list_accounts` | Configured Kaggle accounts (name, username, has_key, default) |
 
 List tools return `{"items": [...]}` (always a JSON object, so empty lists
 survive MCP transport).
-
-The manager's own assistant chat is deliberately not exposed — the connecting
-agent *is* the intelligence; approvals stay gated through the tools above.
 
 ## Run locally (stdio — for Claude Desktop / OpenCode / etc.)
 
