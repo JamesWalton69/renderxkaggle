@@ -136,8 +136,8 @@ private fun RecentJobRow(job: Job) {
     Card(colors = CardDefaults.cardColors(containerColor = Surface), shape = RoundedCornerShape(12.dp)) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(job.notebookTitle ?: "deleted notebook", fontSize = 13.5sp, fontWeight = FontWeight.SemiBold)
-                Text("#${job.id} · ${fmtTime(job.createdAt)} · ${duration(job.startedAt, job.finishedAt)}", color = Muted, fontSize = 11.5sp)
+                Text(job.notebookTitle ?: "deleted notebook", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                Text("#${job.id} · ${fmtTime(job.createdAt)} · ${duration(job.startedAt, job.finishedAt)}", color = Muted, fontSize = 11.5.sp)
             }
             StatusBadge(job.status)
         }

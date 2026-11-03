@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kaggle.manager.Api
+import kotlinx.coroutines.launch
 
 enum class Tab(val label: String, val icon: String) {
     Overview("Overview", "📊"),

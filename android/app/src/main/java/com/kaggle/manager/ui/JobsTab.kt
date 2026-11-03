@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -117,7 +118,7 @@ private fun JobCard(job: Job, onClick: () -> Unit) {
     ) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("#${job.id} · ${job.notebookTitle ?: "deleted notebook"}", fontWeight = FontWeight.SemiBold, fontSize = 13.5sp)
+                Text("#${job.id} · ${job.notebookTitle ?: "deleted notebook"}", fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
                 Spacer(Modifier.weight(1f))
                 StatusBadge(job.status)
             }
@@ -125,7 +126,7 @@ private fun JobCard(job: Job, onClick: () -> Unit) {
             Text(
                 "${job.kind} · kaggle ${job.kaggleStatus ?: "—"} · ${fmtTime(job.createdAt)} · ${duration(job.startedAt, job.finishedAt)}",
                 color = Muted,
-                fontSize = 11.5sp,
+                fontSize = 11.5.sp,
             )
         }
     }
@@ -164,7 +165,7 @@ private fun JobDetailDialog(jobId: Int, onDismiss: () -> Unit, onChanged: () -> 
                     KeyValueRow("kind", j.kind)
                     KeyValueRow("created", fmtTime(j.createdAt))
                     KeyValueRow("duration", duration(j.startedAt, j.finishedAt))
-                    j.error?.let { Text("⚠ $it", color = Red, fontSize = 12.5sp, modifier = Modifier.padding(top = 8.dp)) }
+                    j.error?.let { Text("⚠ $it", color = Red, fontSize = 12.5.sp, modifier = Modifier.padding(top = 8.dp)) }
                     SpacerH(10)
                     Text("Logs", color = Muted, fontSize = 12.sp)
                     Box(
@@ -177,7 +178,7 @@ private fun JobDetailDialog(jobId: Int, onDismiss: () -> Unit, onChanged: () -> 
                         } else {
                             LazyColumn {
                                 items(logs) { (ts, line) ->
-                                    Text("[${ts.takeLast(8)}] $line", color = Muted, fontSize = 11.5sp)
+                                    Text("[${ts.takeLast(8)}] $line", color = Muted, fontSize = 11.5.sp)
                                 }
                             }
                         }

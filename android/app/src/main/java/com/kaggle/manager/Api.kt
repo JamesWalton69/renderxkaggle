@@ -9,6 +9,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import org.json.JSONArray
 import org.json.JSONObject
 
 class ApiException(val status: Int, message: String) : Exception(message)
@@ -126,6 +127,13 @@ object Api {
             if (text.isBlank()) JSONObject() else JSONObject(text)
         }
 
+    private fun execArray(client: OkHttpClient, req: Request): JSONArray =
+        client.newCall(req).execute().use { resp ->
+            val text = resp.body?.string() ?: ""
+            if (!resp.isSuccessful) fail(resp, text)
+            JSONArray(text)
+        }
+
     private fun parseJob(o: JSONObject) = Job(
         id = o.optInt("id"),
         notebookId = if (o.isNull("notebook_id")) null else o.optInt("notebook_id"),
@@ -189,7 +197,7 @@ object Api {
     // ---------------------------------------------------------------- notebooks
 
     suspend fun notebooks(): List<Notebook> = withContext(Dispatchers.IO) {
-        val arr = exec(client, build("GET", "/api/notebooks"))
+        val arr = execArray(client, build("GET", "/api/notebooks"))
         (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
             Notebook(
@@ -228,7 +236,7 @@ object Api {
 
     suspend fun jobs(status: String? = null): List<Job> = withContext(Dispatchers.IO) {
         val path = if (status == null) "/api/jobs?limit=200" else "/api/jobs?status=${status}&limit=200"
-        val arr = exec(client, build("GET", path))
+        val arr = execArray(client, build("GET", path))
         (0 until arr.length()).map { parseJob(arr.getJSONObject(it)) }
     }
 
@@ -254,7 +262,7 @@ object Api {
     // ---------------------------------------------------------------- approvals
 
     suspend fun approvals(): List<Approval> = withContext(Dispatchers.IO) {
-        val arr = exec(client, build("GET", "/api/approvals?status=pending"))
+        val arr = execArray(client, build("GET", "/api/approvals?status=pending"))
         (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
             Approval(
@@ -285,7 +293,7 @@ object Api {
     }
 
     suspend fun history(): List<ChatMsg> = withContext(Dispatchers.IO) {
-        val arr = exec(client, build("GET", "/api/agent/history"))
+        val arr = execArray(client, build("GET", "/api/agent/history"))
         (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
             ChatMsg(role = o.optString("role"), content = o.optString("content"), ts = o.optString("ts"))

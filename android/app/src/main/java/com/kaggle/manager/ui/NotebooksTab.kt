@@ -131,8 +131,8 @@ private fun NotebookCard(nb: Notebook, onRun: () -> Unit) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(nb.title, fontWeight = FontWeight.SemiBold, fontSize = 14.5sp)
-                    Text(nb.slug, color = Muted, fontSize = 11.5sp)
+                    Text(nb.title, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp)
+                    Text(nb.slug, color = Muted, fontSize = 11.5.sp)
                 }
                 StatusBadge(nb.lastJobStatus)
             }
@@ -148,7 +148,7 @@ private fun NotebookCard(nb: Notebook, onRun: () -> Unit) {
                 }
                 Spacer(Modifier.weight(1f))
                 Button(onClick = onRun, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp)) {
-                    Text("Run", fontSize = 12.5sp)
+                    Text("Run", fontSize = 12.5.sp)
                 }
             }
         }
@@ -194,7 +194,7 @@ private fun CreateNotebookDialog(onDismiss: () -> Unit, onCreated: (Int) -> Unit
                     Checkbox(checked = internet, onCheckedChange = { internet = it })
                     Text("Internet / dataset access", fontSize = 13.sp)
                 }
-                error?.let { Text(it, color = Red, fontSize = 12.5sp) }
+                error?.let { Text(it, color = Red, fontSize = 12.5.sp) }
             }
         },
         confirmButton = {

@@ -124,7 +124,7 @@ fun SmallSpinner() {
 
 /** Re-launches `refresh` every intervalMs while this composable is composed. */
 @Composable
-fun rememberAutoRefresh(refresh: () -> Unit, intervalMs: Long = 30_000) {
+fun rememberAutoRefresh(intervalMs: Long = 30_000, refresh: () -> Unit) {
     LaunchedEffect(Unit) {
         while (true) {
             delay(intervalMs)
@@ -136,8 +136,8 @@ fun rememberAutoRefresh(refresh: () -> Unit, intervalMs: Long = 30_000) {
 @Composable
 fun KeyValueRow(key: String, value: String) {
     Row(Modifier.fillMaxWidth()) {
-        Text(key, color = Muted, fontSize = 12.5sp, modifier = Modifier.width(92.dp))
-        Text(value, color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface, fontSize = 12.5sp)
+        Text(key, color = Muted, fontSize = 12.5.sp, modifier = Modifier.width(92.dp))
+        Text(value, color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface, fontSize = 12.5.sp)
     }
 }
 

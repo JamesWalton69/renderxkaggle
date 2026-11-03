@@ -129,10 +129,10 @@ Action matrix (per job status):
 
 ## Architecture
 
-- **Single module** `android/` (Gradle project). Kotlin 2.0.21, AGP 8.7.3,
-  Gradle 8.11.1 (wrapper `distributionUrl` pinned), compileSdk 35, minSdk 26,
-  targetSdk 35, Kotlin Compose compiler plugin (`org.jetbrains.kotlin.plugin.compose`
-  v2.0.21) — required with Kotlin 2.x.
+- **Single module** `android/` (Gradle project). Kotlin 2.0.20, AGP 8.5.2,
+  Gradle 8.9 (wrapper `distributionUrl` pinned), compileSdk 34, minSdk 26,
+  targetSdk 34, Kotlin Compose compiler plugin (`org.jetbrains.kotlin.plugin.compose`
+  v2.0.20) — required with Kotlin 2.x.
 - **UI:** Jetpack Compose (Material 3, BOM 2024.09.03), one `MainActivity`,
   bottom navigation (Overview / Notebooks / Jobs / Approvals / Chat). No
   ViewModel/DI libs — plain composables + `mutableStateOf` + `LaunchedEffect`.

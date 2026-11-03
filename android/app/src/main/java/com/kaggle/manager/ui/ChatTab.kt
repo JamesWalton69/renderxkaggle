@@ -122,7 +122,7 @@ private fun MessageBubble(m: ChatMsg, onOpenApprovals: () -> Unit) {
             Text(
                 m.content,
                 color = Ink,
-                fontSize = 13.5sp,
+                fontSize = 13.5.sp,
                 modifier = Modifier.background(Sky, RoundedCornerShape(14.dp, 14.dp, 4.dp, 14.dp))
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             )
@@ -131,14 +131,14 @@ private fun MessageBubble(m: ChatMsg, onOpenApprovals: () -> Unit) {
             Text(
                 m.content,
                 color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
-                fontSize = 13.5sp,
+                fontSize = 13.5.sp,
                 modifier = Modifier.background(Surface, RoundedCornerShape(14.dp, 14.dp, 14.dp, 4.dp))
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             )
         }
         else -> {
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(m.content, color = Amber, fontSize = 12.5sp, fontStyle = FontStyle.Italic)
+                Text(m.content, color = Amber, fontSize = 12.5.sp, fontStyle = FontStyle.Italic)
                 if (m.content.contains("Approvals")) {
                     TextButton(onClick = onOpenApprovals) { Text("Open", color = Sky, fontSize = 12.sp) }
                 }

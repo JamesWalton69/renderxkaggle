@@ -16,6 +16,16 @@ data/
 # Env / local
 .env
 .env.local
+android/local.properties
+
+# Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+*.apk
+android/captures/
+.idea/
+*.iml
 
 # OS
 .DS_Store

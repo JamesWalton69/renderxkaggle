@@ -41,5 +41,5 @@ OkHttp, no Retrofit/serialization libs.
 - Security: the `kc_session` cookie is stored in `filesDir` (app-private); it
   is not stored in any backup-visible preference store. Session expiry is
   client-side (server keeps sessions for 30 days).
-- Version pins: AGP 8.7.3, Kotlin 2.0.21 (+ Compose compiler plugin), Compose
-  BOM 2024.09.03, OkHttp 4.12.0, minSdk 26 / targetSdk 35.
+- Version pins: AGP 8.5.2, Kotlin 2.0.20 (+ Compose compiler plugin), Compose
+  BOM 2024.09.00, OkHttp 4.12.0, minSdk 26 / targetSdk 34, Gradle 8.9.
