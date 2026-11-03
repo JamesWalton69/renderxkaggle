@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import secrets
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -196,9 +196,11 @@ def overview():
         "SELECT * FROM jobs WHERE status IN ('queued','running','uncertain') ORDER BY id LIMIT 1"
     )
     recent = db.fetch_all("SELECT * FROM jobs ORDER BY id DESC LIMIT 10")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=13)).isoformat(timespec="seconds")
     series_rows = db.fetch_all(
         "SELECT substr(created_at,1,10) AS day, COUNT(*) AS n FROM jobs "
-        "WHERE created_at >= now() - interval '13 days' GROUP BY day ORDER BY day"
+        "WHERE created_at >= %s GROUP BY day ORDER BY day",
+        (cutoff,),
     )
     nb_count = db.fetch_one("SELECT COUNT(*) AS n FROM notebooks")
     at = "active" if active and active["status"] == "running" else ("queued" if active and active["status"] == "queued" else "idle")
