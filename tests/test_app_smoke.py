@@ -105,9 +105,9 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertTrue(len(r.json()["logs"]) >= 1)
 
-        # multi-account CRUD via Neon Postgres
+        # multi-account CRUD via Neon Postgres (including JSON / quoted input parsing)
         r = self.client.post("/api/accounts", json={
-            "name": "Acct A", "username": "user_a", "api_key": "key_a",
+            "name": "Acct A", "username": '"user_a"', "api_key": '{"username": "user_a", "key": "key_a"}',
         })
         self.assertEqual(r.status_code, 200, r.text)
         account_id = r.json()["id"]
@@ -118,6 +118,9 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(r.json()[0]["username"], "user_a")
         self.assertEqual(r.json()[0]["is_default"], 1)
         self.assertNotIn("key_enc", r.json()[0])
+
+        r = self.client.put(f"/api/accounts/{account_id}", json={"name": "Acct Updated"})
+        self.assertEqual(r.status_code, 200)
 
         r = self.client.put(f"/api/accounts/{account_id}/default", json={})
         self.assertEqual(r.status_code, 200)

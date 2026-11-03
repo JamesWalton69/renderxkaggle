@@ -265,6 +265,23 @@ def add_account(name: str, username: str, key: str) -> int:
     )
 
 
+def update_account(account_id: int, name: str = "", username: str = "", key: str = "") -> None:
+    updates, values = [], []
+    if name:
+        updates.append("name=%s")
+        values.append(name)
+    if username:
+        updates.append("username=%s")
+        values.append(username)
+    if key:
+        from . import security
+        updates.append("key_enc=%s")
+        values.append(security.encrypt_secret(key))
+    if updates:
+        values.append(account_id)
+        execute(f"UPDATE kaggle_accounts SET {', '.join(updates)} WHERE id=%s", tuple(values))
+
+
 def set_default_account(account_id: int) -> None:
     execute("UPDATE kaggle_accounts SET is_default=0")
     execute(

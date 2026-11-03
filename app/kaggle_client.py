@@ -113,21 +113,27 @@ class KaggleFacade:
     # ------------------------------------------------------------------ auth
 
     def _auth(self, account: Optional[dict] = None) -> tuple:
+        def _clean(val: Any) -> str:
+            v = str(val or "").strip()
+            if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+                v = v[1:-1].strip()
+            return v
+
         if account and account.get("username") and account.get("key"):
-            return ("basic", str(account["username"]).strip(), str(account["key"]).strip())
+            return ("basic", _clean(account["username"]), _clean(account["key"]))
         s = self._settings()
-        u = s.get("kaggle_username") or os.environ.get("KAGGLE_USERNAME", "")
-        k = s.get("kaggle_key") or os.environ.get("KAGGLE_KEY", "")
-        tok = os.environ.get("KAGGLE_API_TOKEN", "")
+        u = _clean(s.get("kaggle_username") or os.environ.get("KAGGLE_USERNAME", ""))
+        k = _clean(s.get("kaggle_key") or os.environ.get("KAGGLE_KEY", ""))
+        tok = _clean(os.environ.get("KAGGLE_API_TOKEN", ""))
         if not u or not k:
             if tok:
-                return ("bearer", "", tok.strip())
+                return ("bearer", "", tok)
             raise CredentialsMissing(
                 "Kaggle credentials are not configured. Set KAGGLE_ACCOUNTS "
                 "(JSON list) or KAGGLE_USERNAME / KAGGLE_KEY / "
                 "KAGGLE_API_TOKEN as environment variables."
             )
-        return ("basic", u.strip(), k.strip())
+        return ("basic", u, k)
 
     def _client(self, auth: tuple):
         # lazy import so the module can be imported without httpx installed
@@ -135,11 +141,19 @@ class KaggleFacade:
         headers = {"Content-Type": "application/json"}
         if auth[0] == "bearer":
             headers["Authorization"] = f"Bearer {auth[2]}"
-        else:
-            basic = base64.b64encode(f"{auth[1]}:{auth[2]}".encode()).decode()
-            headers["Authorization"] = f"Basic {basic}"
-            headers["X-Kaggle-Authorization"] = f"Bearer {auth[2]}"
-        return httpx.Client(base_url=self.BASE, timeout=self.TIMEOUT, headers=headers)
+            return httpx.Client(
+                base_url=self.BASE,
+                timeout=self.TIMEOUT,
+                headers=headers,
+                follow_redirects=True,
+            )
+        return httpx.Client(
+            base_url=self.BASE,
+            timeout=self.TIMEOUT,
+            headers=headers,
+            auth=(auth[1], auth[2]),
+            follow_redirects=True,
+        )
 
     @staticmethod
     def _raise_for(resp) -> None:

@@ -67,6 +67,28 @@ class AccountsDbTestCase(unittest.TestCase):
         db.delete_account(aid1)
         self.assertEqual(db.list_accounts(), [])
 
+    def test_update_account(self):
+        aid = db.add_account("Test", "user_old", "key_old")
+        db.update_account(aid, name="NewName", username="user_new", key="key_new")
+        acc = db.get_account(aid)
+        self.assertEqual(acc["name"], "NewName")
+        self.assertEqual(acc["username"], "user_new")
+        self.assertEqual(acc["key"], "key_new")
+
+    def test_kaggle_client_auth_sanitization_and_no_x_kaggle_auth(self):
+        from app.kaggle_client import KaggleFacade
+        client = KaggleFacade()
+
+        # Auth cleans quotes and whitespace
+        auth = client._auth({"username": ' "quoted_user" ', "key": " 'quoted_key' "})
+        self.assertEqual(auth, ("basic", "quoted_user", "quoted_key"))
+
+        # _client sets basic auth and does not include conflicting X-Kaggle-Authorization
+        c = client._client(auth)
+        self.assertNotIn("X-Kaggle-Authorization", c.headers)
+        self.assertTrue(c.follow_redirects)
+        self.assertIsNotNone(c.auth)
+
 
 if __name__ == "__main__":
     unittest.main()

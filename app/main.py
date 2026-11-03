@@ -488,6 +488,39 @@ def global_logs(limit: int = 200):
 
 # ------------------------------------------------------------------ Kaggle accounts
 
+def _clean_str(val: Any) -> str:
+    s = str(val or "").strip()
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        s = s[1:-1].strip()
+    return s
+
+
+def _parse_account_payload(body: dict) -> tuple[str, str, str]:
+    raw_name = _clean_str(body.get("name", ""))
+    raw_user = _clean_str(body.get("username", ""))
+    raw_key = _clean_str(body.get("api_key", body.get("key", "")))
+
+    for candidate in (raw_key, raw_user):
+        if candidate.startswith("{") and candidate.endswith("}"):
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict):
+                    if "key" in parsed and (raw_key == candidate or not raw_key):
+                        raw_key = _clean_str(parsed["key"])
+                    if "username" in parsed and (raw_user == candidate or not raw_user):
+                        raw_user = _clean_str(parsed["username"])
+            except Exception:
+                pass
+
+    raw_name = _clean_str(raw_name)
+    raw_user = _clean_str(raw_user)
+    raw_key = _clean_str(raw_key)
+
+    if not raw_name:
+        raw_name = raw_user or "Kaggle Account"
+    return raw_name, raw_user, raw_key
+
+
 @app.get("/api/accounts", dependencies=[Depends(require_auth)])
 def list_accounts():
     return db.list_accounts()
@@ -495,12 +528,19 @@ def list_accounts():
 
 @app.post("/api/accounts", dependencies=[Depends(require_auth)])
 def add_account(body: dict):
-    name = str(body.get("name", "")).strip()
-    username = str(body.get("username", "")).strip()
-    key = str(body.get("api_key", "")).strip()
-    if not name or not username or not key:
-        raise HTTPException(status_code=400, detail="name, username and API key are required")
+    name, username, key = _parse_account_payload(body)
+    if not username or not key:
+        raise HTTPException(status_code=400, detail="username and API key are required")
     aid = db.add_account(name, username, key)
+    return {"id": aid, "name": name, "username": username}
+
+
+@app.put("/api/accounts/{aid}", dependencies=[Depends(require_auth)])
+def update_account(aid: int, body: dict):
+    if not db.fetch_one("SELECT 1 FROM kaggle_accounts WHERE id=%s", (aid,)):
+        raise HTTPException(status_code=404, detail="account not found")
+    name, username, key = _parse_account_payload(body)
+    db.update_account(aid, name=name, username=username, key=key)
     return {"id": aid, "name": name, "username": username}
 
 
