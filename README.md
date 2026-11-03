@@ -5,8 +5,8 @@ with one or more authorized Kaggle identities (choose per notebook), a persisten
 job queue (one active execution at a time), and an **MCP server** that exposes
 the same control plane to any AI agent (OpenCode, Claude Desktop, Cursor, …).
 
-Built for **Render's free tier**: one web service, SQLite, no external infrastructure,
-no build step.
+Built for **Render's free tier**: one web service + a Neon Postgres database,
+no on-instance storage, no build step.
 
 ---
 
@@ -23,7 +23,7 @@ no build step.
                     │   │    ├─ serial queue picker                     │
                     │   │    ├─ Kaggle polling / status transitions     │
                     │   │    └─ cron scheduler (app/scheduler.py)       │
-                    │   └── SQLite (WAL) — jobs, notebooks, logs,       │
+                    │   └── Postgres (Neon) — durable storage       │
                     │        settings, sessions                         │
                     └───────────┬──────────────────────────────────────┘
                                 │
@@ -40,7 +40,7 @@ no build step.
 | Concern | Choice | Why |
 |---|---|---|
 | Backend | Python 3.12, FastAPI, uvicorn (1 worker) | Small memory footprint on free tier; async-friendly |
-| Database | SQLite (stdlib, WAL) | Zero infra, restart-safe, file-backed |
+| Database | Postgres via Neon (`psycopg2`) | Durable across redeploys on Render's free tier |
 | Queue | DB rows + in-process worker | Persistent across restarts; one active execution enforced by the DB |
 | Kaggle | Direct REST client over official Kernels API v1 (`app/kaggle_client.py`) | No heavy SDK; full control over retries and errors |
 | MCP | MCP server (`mcp/`) exposing the manager as tools | Primary agent access — same API the dashboard uses, no browser needed |
@@ -72,7 +72,7 @@ queued → running → success
             └─ user stop → stopping → cancelled (outputs preserved)
 ```
 
-- Everything is stored in SQLite, so an execution survives restarts.
+- Everything is stored in Postgres (Neon), so an execution survives restarts and redeploys.
 - On boot the worker reconciles: any job left in `running`/`stopping` becomes
   `interrupted` with a log entry. You can requeue it from the dashboard or via
   the MCP `requeue_job` tool.
@@ -122,7 +122,7 @@ The Kaggle client (`app/kaggle_client.py`) follows the push mechanics of
 app/
   main.py            FastAPI app: routes, auth, static mount, bootstrap
   config.py          paths, constants, env defaults
-  db.py              SQLite layer (schema, helpers)
+  db.py              Postgres layer (schema, helpers)
   security.py        scrypt passwords, session tokens, AES-GCM secret encryption
   scheduler.py       minimal 5-field cron matcher
   kaggle_client.py   Kaggle Kernels API v1 client (httpx)
@@ -138,7 +138,8 @@ android/
 mcp/
   MCP server (agent router) for the manager — see mcp/README.md
 render.yaml          Render blueprint
-requirements.txt     fastapi, uvicorn, httpx, cryptography
+requirements.txt     fastapi, uvicorn, httpx, cryptography, psycopg2-binary
+requirements-dev.txt  embedded-postgres (offline test DB)
 ```
 
 ---
@@ -149,13 +150,16 @@ requirements.txt     fastapi, uvicorn, httpx, cryptography
 python -m venv .venv && .venv\Scripts\activate   # Windows
 pip install -r requirements.txt
 set ADMIN_PASSWORD=your-password                 # optional; else generated
+set DATABASE_URL=postgresql://user:password@host:5432/kaggle_manager
 uvicorn app.main:app --reload --port 8000
 # open http://localhost:8000
 ```
 
-Tests (all offline, no external calls):
+Tests (all offline, no external calls — they boot a throwaway real Postgres
+via `embedded-postgres`):
 
 ```bash
+pip install -r requirements-dev.txt
 python -m unittest discover tests -v
 ```
 
@@ -183,6 +187,7 @@ than the web service.
 | Variable | Needed? | What it does |
 |---|---|---|
 | `ADMIN_PASSWORD` | **yes** | Dashboard login password. If unset, a random one is written to `data/admin_bootstrap.txt` on first boot. |
+| `DATABASE_URL` | **yes** | Postgres connection string (e.g. from Neon). The app uses Postgres, not SQLite — on Render's free tier this is the *only* durable storage. |
 | `KAGGLE_ACCOUNTS` | **for Kaggle** | JSON array of accounts: `[{"name":"Account A","username":"u1","key":"k1"},...]`. IDs are 1-based by list order; the first is the default. This is the **only** way to configure Kaggle credentials — the dashboard has no credential entry. |
 | `KAGGLE_USERNAME` / `KAGGLE_KEY` | optional | Legacy fallback: single account used when `KAGGLE_ACCOUNTS` is unset/invalid. |
 | `KAGGLE_API_TOKEN` | optional | Bearer-token fallback when no username/key pair is configured. |

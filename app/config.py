@@ -10,7 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR / "data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-DB_PATH = DATA_DIR / "kaggle_manager.db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://localhost/kaggle_manager")
 SECRET_PATH = DATA_DIR / ".secret_key"
 OUTPUTS_DIR = DATA_DIR / "outputs"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)

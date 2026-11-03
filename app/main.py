@@ -1,7 +1,7 @@
 """FastAPI application: REST API + static dashboard.
 
 Single-process design (one uvicorn worker) — the background job worker and the
-queue state live in this process, backed by SQLite. Do not run multiple
+queue state live in this process, backed by Postgres (Neon). Do not run multiple
 workers; the README documents why.
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ def _session_ok(request: Request) -> bool:
     if not raw:
         return False
     row = db.fetch_one(
-        "SELECT 1 FROM sessions WHERE token_hash=?", (security.hash_token(raw),)
+        "SELECT 1 FROM sessions WHERE token_hash=%s", (security.hash_token(raw),)
     )
     return row is not None
 
@@ -136,7 +136,7 @@ def login(body: dict, response: Response):
         raise HTTPException(status_code=401, detail="invalid password")
     raw, hashed = security.new_session_token()
     db.execute(
-        "INSERT INTO sessions(token_hash, created_at) VALUES(?,?)",
+        "INSERT INTO sessions(token_hash, created_at) VALUES(%s,%s)",
         (hashed, _now()),
     )
     response.set_cookie(
@@ -150,7 +150,7 @@ def login(body: dict, response: Response):
 def logout(request: Request, response: Response):
     raw = request.cookies.get(config.SESSION_COOKIE)
     if raw:
-        db.execute("DELETE FROM sessions WHERE token_hash=?", (security.hash_token(raw),))
+        db.execute("DELETE FROM sessions WHERE token_hash=%s", (security.hash_token(raw),))
     response.delete_cookie(config.SESSION_COOKIE)
     return {"ok": True}
 
@@ -198,7 +198,7 @@ def overview():
     recent = db.fetch_all("SELECT * FROM jobs ORDER BY id DESC LIMIT 10")
     series_rows = db.fetch_all(
         "SELECT substr(created_at,1,10) AS day, COUNT(*) AS n FROM jobs "
-        "WHERE created_at >= datetime('now', '-13 days') GROUP BY day ORDER BY day"
+        "WHERE created_at >= now() - interval '13 days' GROUP BY day ORDER BY day"
     )
     nb_count = db.fetch_one("SELECT COUNT(*) AS n FROM notebooks")
     at = "active" if active and active["status"] == "running" else ("queued" if active and active["status"] == "queued" else "idle")
@@ -247,7 +247,7 @@ def create_notebook(body: dict):
     })
     import re
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "notebook"
-    if db.fetch_one("SELECT 1 FROM notebooks WHERE slug=?", (slug,)):
+    if db.fetch_one("SELECT 1 FROM notebooks WHERE slug=%s", (slug,)):
         slug = f"{slug}-{datetime.now().strftime('%H%M%S')}"
     now = _now()
     account_id = body.get("account_id")
@@ -259,7 +259,7 @@ def create_notebook(body: dict):
     internet = 1 if body.get("internet", True) else 0
     nid = db.execute(
         "INSERT INTO notebooks(slug, title, description, source, account_id, accelerator, internet, created_at, updated_at) "
-        "VALUES(?,?,?,?,?,?,?,?,?)",
+        "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
         (slug, title, str(body.get("description", "")), source, account_id, accelerator, internet, now, now),
     )
     return {"id": nid, "slug": slug}
@@ -267,7 +267,7 @@ def create_notebook(body: dict):
 
 @app.get("/api/notebooks/{nid}", dependencies=[Depends(require_auth)])
 def get_notebook(nid: int):
-    row = db.fetch_one("SELECT * FROM notebooks WHERE id=?", (nid,))
+    row = db.fetch_one("SELECT * FROM notebooks WHERE id=%s", (nid,))
     if not row:
         raise HTTPException(status_code=404, detail="notebook not found")
     return row
@@ -275,29 +275,29 @@ def get_notebook(nid: int):
 
 @app.put("/api/notebooks/{nid}", dependencies=[Depends(require_auth)])
 def update_notebook(nid: int, body: dict):
-    if not db.fetch_one("SELECT 1 FROM notebooks WHERE id=?", (nid,)):
+    if not db.fetch_one("SELECT 1 FROM notebooks WHERE id=%s", (nid,)):
         raise HTTPException(status_code=404, detail="notebook not found")
     updates, values = [], []
     if "title" in body:
-        updates.append("title=?")
+        updates.append("title=%s")
         values.append(str(body["title"]).strip())
     if "description" in body:
-        updates.append("description=?")
+        updates.append("description=%s")
         values.append(str(body["description"]))
     if "schedule" in body:
         cron = str(body["schedule"]).strip()
         err = scheduler.cron_is_valid(cron)
         if err:
             raise HTTPException(status_code=400, detail=err)
-        updates.append("schedule=?")
+        updates.append("schedule=%s")
         values.append(cron)
     if "account_id" in body:
         account_id = body["account_id"]
         if account_id is None:
-            updates.append("account_id=?")
+            updates.append("account_id=%s")
             values.append(None)
         elif config.get_account(account_id) is not None:
-            updates.append("account_id=?")
+            updates.append("account_id=%s")
             values.append(int(account_id))
         else:
             raise HTTPException(status_code=400, detail="unknown Kaggle account")
@@ -305,49 +305,49 @@ def update_notebook(nid: int, body: dict):
         accelerator = str(body["accelerator"]).strip().lower()
         if accelerator not in kaggle_client.ACCELERATORS:
             raise HTTPException(status_code=400, detail=f"unknown accelerator '{accelerator}'")
-        updates.append("accelerator=?")
+        updates.append("accelerator=%s")
         values.append(accelerator)
     if "internet" in body:
-        updates.append("internet=?")
+        updates.append("internet=%s")
         values.append(1 if body["internet"] else 0)
     if "source" in body:
         try:
             json.loads(str(body["source"]))
         except ValueError:
             raise HTTPException(status_code=400, detail="source must be valid notebook JSON")
-        updates.append("source=?")
+        updates.append("source=%s")
         values.append(str(body["source"]))
     if not updates:
         return {"ok": True}
-    updates.append("updated_at=?")
+    updates.append("updated_at=%s")
     values.append(_now())
     values.append(nid)
-    db.execute(f"UPDATE notebooks SET {', '.join(updates)} WHERE id=?", values)
+    db.execute(f"UPDATE notebooks SET {', '.join(updates)} WHERE id=%s", values)
     return {"ok": True}
 
 
 @app.delete("/api/notebooks/{nid}", dependencies=[Depends(require_auth)])
 def delete_notebook(nid: int):
     active = db.fetch_one(
-        "SELECT 1 FROM jobs WHERE notebook_id=? AND status IN ('queued','running','uncertain') LIMIT 1",
+        "SELECT 1 FROM jobs WHERE notebook_id=%s AND status IN ('queued','running','uncertain') LIMIT 1",
         (nid,),
     )
     if active:
         raise HTTPException(status_code=409, detail="notebook has active/queued jobs")
-    db.execute("DELETE FROM notebooks WHERE id=?", (nid,))
+    db.execute("DELETE FROM notebooks WHERE id=%s", (nid,))
     return {"ok": True}
 
 
 @app.post("/api/notebooks/{nid}/run", dependencies=[Depends(require_auth)])
 def run_notebook(nid: int, body: dict):
-    nb = db.fetch_one("SELECT * FROM notebooks WHERE id=?", (nid,))
+    nb = db.fetch_one("SELECT * FROM notebooks WHERE id=%s", (nid,))
     if not nb:
         raise HTTPException(status_code=404, detail="notebook not found")
     jid = db.enqueue_job(nid, kind="manual")
     title = nb["title"]
     slug = nb["slug"]
     db.execute(
-        "UPDATE jobs SET meta=? WHERE id=?",
+        "UPDATE jobs SET meta=%s WHERE id=%s",
         (json.dumps({"notebook_title": title, "notebook_slug": slug,
                      "comment": str(body.get("comment", ""))}), jid),
     )
@@ -361,21 +361,21 @@ def list_jobs(status: str | None = None, limit: int = 50):
     limit = max(1, min(limit, 200))
     if status:
         rows = db.fetch_all(
-            "SELECT * FROM jobs WHERE status=? ORDER BY id DESC LIMIT ?", (status, limit)
+            "SELECT * FROM jobs WHERE status=%s ORDER BY id DESC LIMIT %s", (status, limit)
         )
     else:
-        rows = db.fetch_all("SELECT * FROM jobs ORDER BY id DESC LIMIT ?", (limit,))
+        rows = db.fetch_all("SELECT * FROM jobs ORDER BY id DESC LIMIT %s", (limit,))
     return [_job_public(j) for j in rows]
 
 
 @app.get("/api/jobs/{jid}", dependencies=[Depends(require_auth)])
 def get_job(jid: int):
-    row = db.fetch_one("SELECT * FROM jobs WHERE id=?", (jid,))
+    row = db.fetch_one("SELECT * FROM jobs WHERE id=%s", (jid,))
     if not row:
         raise HTTPException(status_code=404, detail="job not found")
     job = _job_public(row)
     job["logs"] = db.fetch_all(
-        "SELECT ts, line FROM job_logs WHERE job_id=? ORDER BY id", (jid,)
+        "SELECT ts, line FROM job_logs WHERE job_id=%s ORDER BY id", (jid,)
     )
     return job
 
@@ -383,7 +383,7 @@ def get_job(jid: int):
 @app.get("/api/jobs/{jid}/logs", dependencies=[Depends(require_auth)])
 def get_job_logs(jid: int):
     rows = db.fetch_all(
-        "SELECT ts, line FROM job_logs WHERE job_id=? ORDER BY id DESC LIMIT 500",
+        "SELECT ts, line FROM job_logs WHERE job_id=%s ORDER BY id DESC LIMIT 500",
         (jid,),
     )[::-1]
     return {"logs": rows}
@@ -391,12 +391,12 @@ def get_job_logs(jid: int):
 
 @app.post("/api/jobs/{jid}/cancel", dependencies=[Depends(require_auth)])
 async def cancel_job(jid: int):
-    job = db.fetch_one("SELECT * FROM jobs WHERE id=?", (jid,))
+    job = db.fetch_one("SELECT * FROM jobs WHERE id=%s", (jid,))
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
     if job["status"] in (config.JOB_QUEUED, config.JOB_UNCERTAIN):
         db.execute(
-            "UPDATE jobs SET status=?, finished_at=?, error='cancelled by user' WHERE id=?",
+            "UPDATE jobs SET status=%s, finished_at=%s, error='cancelled by user' WHERE id=%s",
             (config.JOB_CANCELLED, _now(), jid),
         )
         db.add_job_log(jid, "job cancelled by user")
@@ -415,13 +415,13 @@ async def cancel_job(jid: int):
 
 @app.post("/api/jobs/{jid}/requeue", dependencies=[Depends(require_auth)])
 def requeue_job(jid: int):
-    job = db.fetch_one("SELECT * FROM jobs WHERE id=?", (jid,))
+    job = db.fetch_one("SELECT * FROM jobs WHERE id=%s", (jid,))
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
     if job["status"] in config.ACTIVE_STATUSES:
         raise HTTPException(status_code=409, detail=f"job is {job['status']}")
     db.execute(
-        "UPDATE jobs SET status=?, error='', finished_at=NULL WHERE id=?",
+        "UPDATE jobs SET status=%s, error='', finished_at=NULL WHERE id=%s",
         (config.JOB_QUEUED, jid),
     )
     db.add_job_log(jid, "job requeued by user")
@@ -430,7 +430,7 @@ def requeue_job(jid: int):
 
 @app.get("/api/jobs/{jid}/output", dependencies=[Depends(require_auth)])
 def job_output(jid: int):
-    job = db.fetch_one("SELECT * FROM jobs WHERE id=?", (jid,))
+    job = db.fetch_one("SELECT * FROM jobs WHERE id=%s", (jid,))
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
     try:
@@ -447,7 +447,7 @@ def job_output(jid: int):
 
 @app.get("/api/jobs/{jid}/output/{filename}", dependencies=[Depends(require_auth)])
 def job_output_file(jid: int, filename: str):
-    job = db.fetch_one("SELECT * FROM jobs WHERE id=?", (jid,))
+    job = db.fetch_one("SELECT * FROM jobs WHERE id=%s", (jid,))
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
     try:
@@ -467,7 +467,7 @@ def global_logs(limit: int = 200):
     limit = max(1, min(limit, 500))
     rows = db.fetch_all(
         "SELECT l.job_id, l.ts, l.line FROM job_logs l "
-        "ORDER BY l.id DESC LIMIT ?",
+        "ORDER BY l.id DESC LIMIT %s",
         (limit,),
     )[::-1]
     return {"logs": rows}

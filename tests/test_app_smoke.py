@@ -2,19 +2,24 @@
 
 Uses Starlette's TestClient against the real FastAPI app. No external services
 are contacted:
-- a fresh temp DB and no Kaggle credentials mean the worker's start attempt
-  fails *locally* with CredentialsMissing (no network), which still validates
-  the full job pipeline;
-- the AI endpoint is never called.
+- an embedded Postgres (embedded-postgres) and no Kaggle credentials mean the
+  worker's start attempt fails *locally* with CredentialsMissing (no network),
+  which still validates the full job pipeline.
 """
 import os
 import tempfile
 import unittest
 from pathlib import Path
 
+from pg_fixture import clear_tables, ensure_pg
+
+ensure_pg()
+
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="kc-smoke-")
 os.environ["ADMIN_PASSWORD"] = "smoke-test-password"
 os.environ["POLL_SECONDS"] = "1"
+
+from app import db  # noqa: E402
 
 APP_OK = True
 IMPORT_ERR = None
@@ -33,6 +38,8 @@ class SmokeTest(unittest.TestCase):
             raise unittest.SkipTest(
                 f"fastapi/starlette mismatch in this environment: {IMPORT_ERR}"
             )
+        db.init_db()
+        clear_tables("notebooks", "jobs", "job_logs", "settings", "sessions")
         cls.client = TestClient(app)
 
     @classmethod

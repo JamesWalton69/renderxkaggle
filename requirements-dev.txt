@@ -1,0 +1,1 @@
+embedded-postgres>=18,<19

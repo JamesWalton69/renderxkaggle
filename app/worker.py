@@ -34,14 +34,13 @@ def _job_meta(job: dict) -> dict:
         return {}
 
 
-def _save_job_meta(job_id: int, meta: dict, db_path=None) -> None:
-    db.execute("UPDATE jobs SET meta=? WHERE id=?", (json.dumps(meta), job_id), db_path=db_path)
+def _save_job_meta(job_id: int, meta: dict) -> None:
+    db.execute("UPDATE jobs SET meta=%s WHERE id=%s", (json.dumps(meta), job_id))
 
 
 class Worker:
-    def __init__(self, facade, db_path=None, poll_seconds: Optional[float] = None):
+    def __init__(self, facade, poll_seconds: Optional[float] = None):
         self.facade = facade
-        self.db_path = db_path
         self.poll_seconds = poll_seconds or config.POLL_SECONDS
         self._task: Optional[asyncio.Task] = None
 
@@ -71,17 +70,17 @@ class Worker:
     def reconcile(self) -> None:
         """After a (re)start: interrupt jobs that were mid-flight."""
         rows = db.fetch_all(
-            "SELECT id FROM jobs WHERE status IN (?,?)",
+            "SELECT id FROM jobs WHERE status IN (%s,%s)",
             (config.JOB_RUNNING, config.JOB_STOPPING),
-            db_path=self.db_path,
+            
         )
         for row in rows:
             db.execute(
-                "UPDATE jobs SET status=?, error='interrupted by server restart' WHERE id=?",
+                "UPDATE jobs SET status=%s, error='interrupted by server restart' WHERE id=%s",
                 (config.JOB_INTERRUPTED, row["id"]),
-                db_path=self.db_path,
+                
             )
-            db.add_job_log(row["id"], "server restarted — execution interrupted; requeue to retry", db_path=self.db_path)
+            db.add_job_log(row["id"], "server restarted — execution interrupted; requeue to retry",)
 
     # ------------------------------------------------------------- tick
 
@@ -94,18 +93,18 @@ class Worker:
 
     def _maybe_start_next(self) -> None:
         active = db.fetch_one(
-            "SELECT id FROM jobs WHERE status IN (?,?) LIMIT 1",
+            "SELECT id FROM jobs WHERE status IN (%s,%s) LIMIT 1",
             (config.JOB_RUNNING, config.JOB_STOPPING),
-            db_path=self.db_path,
+            
         )
         if active:
             return
 
         # 1) normal queue (FIFO)
         next_job = db.fetch_one(
-            "SELECT * FROM jobs WHERE status=? ORDER BY id LIMIT 1",
+            "SELECT * FROM jobs WHERE status=%s ORDER BY id LIMIT 1",
             (config.JOB_QUEUED,),
-            db_path=self.db_path,
+            
         )
         if next_job:
             self._start_execution(next_job)
@@ -114,25 +113,25 @@ class Worker:
         # 2) uncertain jobs whose retry cooldown elapsed
         now = _now()
         stale = db.fetch_all(
-            "SELECT * FROM jobs WHERE status=?",
+            "SELECT * FROM jobs WHERE status=%s",
             (config.JOB_UNCERTAIN,),
-            db_path=self.db_path,
+            
         )
         for job in stale:
             meta = _job_meta(job)
             if meta.get("retry_at", "") <= now:
                 db.execute(
-                    "UPDATE jobs SET status=?, error='' WHERE id=?",
+                    "UPDATE jobs SET status=%s, error='' WHERE id=%s",
                     (config.JOB_RUNNING, job["id"]),
-                    db_path=self.db_path,
+                    
                 )
-                db.add_job_log(job["id"], "retrying uncertain execution", db_path=self.db_path)
+                db.add_job_log(job["id"], "retrying uncertain execution",)
                 self._start_execution(job)
                 return
 
     def _start_execution(self, job: dict) -> None:
         nb = db.fetch_one(
-            "SELECT * FROM notebooks WHERE id=?", (job.get("notebook_id"),), db_path=self.db_path
+            "SELECT * FROM notebooks WHERE id=%s", (job.get("notebook_id"),)
         )
         meta = _job_meta(job)
         meta.setdefault("notebook_title", nb["title"] if nb else "deleted notebook")
@@ -142,11 +141,11 @@ class Worker:
         ref = meta.get("ref", "")
         if ref:
             db.execute(
-                "UPDATE jobs SET status=?, started_at=COALESCE(started_at,?), kaggle_status='queued' WHERE id=?",
+                "UPDATE jobs SET status=%s, started_at=COALESCE(started_at,%s), kaggle_status='queued' WHERE id=%s",
                 (config.JOB_RUNNING, _now(), job["id"]),
-                db_path=self.db_path,
+                
             )
-            db.add_job_log(job["id"], f"resuming execution of {ref}", db_path=self.db_path)
+            db.add_job_log(job["id"], f"resuming execution of {ref}",)
             return
 
         account = config.get_account(meta.get("account_id"))
@@ -157,42 +156,42 @@ class Worker:
             self.facade.run_notebook(nb, account=account)
         except ApiError as exc:
             db.execute(
-                "UPDATE jobs SET status=?, kaggle_status='error', error=?, finished_at=? WHERE id=?",
+                "UPDATE jobs SET status=%s, kaggle_status='error', error=%s, finished_at=%s WHERE id=%s",
                 (config.JOB_FAILED, exc.message[:1000], _now(), job["id"]),
-                db_path=self.db_path,
+                
             )
-            db.add_job_log(job["id"], f"failed to start: {exc.message}", db_path=self.db_path)
+            db.add_job_log(job["id"], f"failed to start: {exc.message}",)
             return
         except Exception as exc:
             db.execute(
-                "UPDATE jobs SET status=?, kaggle_status='error', error=?, finished_at=? WHERE id=?",
+                "UPDATE jobs SET status=%s, kaggle_status='error', error=%s, finished_at=%s WHERE id=%s",
                 (config.JOB_FAILED, f"unexpected: {exc}"[:1000], _now(), job["id"]),
-                db_path=self.db_path,
+                
             )
-            db.add_job_log(job["id"], f"failed to start (unexpected): {exc}", db_path=self.db_path)
+            db.add_job_log(job["id"], f"failed to start (unexpected): {exc}",)
             return
 
         meta["ref"] = ref
-        _save_job_meta(job["id"], meta, db_path=self.db_path)
+        _save_job_meta(job["id"], meta,)
         db.execute(
-            "UPDATE jobs SET status=?, started_at=COALESCE(started_at,?), kaggle_status='queued' WHERE id=?",
+            "UPDATE jobs SET status=%s, started_at=COALESCE(started_at,%s), kaggle_status='queued' WHERE id=%s",
             (config.JOB_RUNNING, _now(), job["id"]),
-            db_path=self.db_path,
+            
         )
         db.execute(
-            "UPDATE notebooks SET last_run_at=? WHERE id=?",
+            "UPDATE notebooks SET last_run_at=%s WHERE id=%s",
             (_now(), job.get("notebook_id")),
-            db_path=self.db_path,
+            
         )
-        db.add_job_log(job["id"], f"submitted to Kaggle: {ref} (job queued remotely)", db_path=self.db_path)
+        db.add_job_log(job["id"], f"submitted to Kaggle: {ref} (job queued remotely)",)
 
     # ------------------------------------------------------------- polling
 
     def _poll_active(self) -> None:
         running = db.fetch_all(
-            "SELECT * FROM jobs WHERE status IN (?,?)",
+            "SELECT * FROM jobs WHERE status IN (%s,%s)",
             (config.JOB_RUNNING, config.JOB_STOPPING),
-            db_path=self.db_path,
+            
         )
         for job in running:
             self._poll_job(job)
@@ -203,11 +202,11 @@ class Worker:
         job_id = job["id"]
         if not ref:
             db.execute(
-                "UPDATE jobs SET status=?, finished_at=?, error='missing remote ref' WHERE id=?",
+                "UPDATE jobs SET status=%s, finished_at=%s, error='missing remote ref' WHERE id=%s",
                 (config.JOB_INTERRUPTED, _now(), job_id),
-                db_path=self.db_path,
+                
             )
-            db.add_job_log(job_id, "no remote reference stored; job interrupted", db_path=self.db_path)
+            db.add_job_log(job_id, "no remote reference stored; job interrupted",)
             return
 
         try:
@@ -224,13 +223,13 @@ class Worker:
         last = meta.get("last_kaggle_status", "")
         if ks and ks != last:
             msg = f"kaggle status → {ks}: {status.get('message','')[:300]}"
-            db.add_job_log(job_id, msg, db_path=self.db_path)
+            db.add_job_log(job_id, msg,)
         meta["last_kaggle_status"] = ks
-        _save_job_meta(job_id, meta, db_path=self.db_path)
+        _save_job_meta(job_id, meta,)
         db.execute(
-            "UPDATE jobs SET kaggle_status=? WHERE id=?",
+            "UPDATE jobs SET kaggle_status=%s WHERE id=%s",
             (ks, job_id),
-            db_path=self.db_path,
+            
         )
 
         if ks == "complete":
@@ -239,18 +238,18 @@ class Worker:
             failure = status.get("failure_message") or status.get("message") or "Kaggle reported an error"
             if job["status"] == config.JOB_STOPPING:
                 db.execute(
-                    "UPDATE jobs SET status=?, kaggle_status='error', error=?, finished_at=? WHERE id=?",
+                    "UPDATE jobs SET status=%s, kaggle_status='error', error=%s, finished_at=%s WHERE id=%s",
                     (config.JOB_CANCELLED, "stopped by user (kernel ended with error after stop)", _now(), job_id),
-                    db_path=self.db_path,
+                    
                 )
-                db.add_job_log(job_id, f"stop completed (kernel errored after stop): {failure[:300]}", db_path=self.db_path)
+                db.add_job_log(job_id, f"stop completed (kernel errored after stop): {failure[:300]}",)
             else:
                 db.execute(
-                    "UPDATE jobs SET status=?, kaggle_status='error', error=?, finished_at=? WHERE id=?",
+                    "UPDATE jobs SET status=%s, kaggle_status='error', error=%s, finished_at=%s WHERE id=%s",
                     (config.JOB_FAILED, failure[:1000], _now(), job_id),
-                    db_path=self.db_path,
+                    
                 )
-                db.add_job_log(job_id, f"failed: {failure[:500]}", db_path=self.db_path)
+                db.add_job_log(job_id, f"failed: {failure[:500]}",)
 
     def _poll_failure(self, job: dict, message: str) -> None:
         job_id = job["id"]
@@ -259,21 +258,21 @@ class Worker:
         if job["status"] == config.JOB_STOPPING:
             # keep waiting for the terminal state; never demote to uncertain
             # (the retry path would re-push the notebook, undoing the stop)
-            _save_job_meta(job_id, meta, db_path=self.db_path)
-            db.add_job_log(job_id, f"stop poll warning ({meta['failures']}): {message}", db_path=self.db_path)
+            _save_job_meta(job_id, meta,)
+            db.add_job_log(job_id, f"stop poll warning ({meta['failures']}): {message}",)
             return
         if meta["failures"] >= config.WORKER_MAX_POLL_FAILURES:
             meta["retry_at"] = (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat(timespec="seconds")
-            _save_job_meta(job_id, meta, db_path=self.db_path)
+            _save_job_meta(job_id, meta,)
             db.execute(
-                "UPDATE jobs SET status=?, error=? WHERE id=?",
+                "UPDATE jobs SET status=%s, error=%s WHERE id=%s",
                 (config.JOB_UNCERTAIN, message[:1000], job_id),
-                db_path=self.db_path,
+                
             )
-            db.add_job_log(job_id, f"polling failed repeatedly; job marked uncertain — {message}", db_path=self.db_path)
+            db.add_job_log(job_id, f"polling failed repeatedly; job marked uncertain — {message}",)
         else:
-            _save_job_meta(job_id, meta, db_path=self.db_path)
-            db.add_job_log(job_id, f"poll warning ({meta['failures']}/{config.WORKER_MAX_POLL_FAILURES}): {message}", db_path=self.db_path)
+            _save_job_meta(job_id, meta,)
+            db.add_job_log(job_id, f"poll warning ({meta['failures']}/{config.WORKER_MAX_POLL_FAILURES}): {message}",)
 
     def _finalize_success(self, job: dict, ref: str) -> None:
         job_id = job["id"]
@@ -286,32 +285,32 @@ class Worker:
             )
         except Exception as exc:
             db.execute(
-                "UPDATE jobs SET status=?, kaggle_status='complete', error=?, finished_at=? WHERE id=?",
+                "UPDATE jobs SET status=%s, kaggle_status='complete', error=%s, finished_at=%s WHERE id=%s",
                 (config.JOB_INTERRUPTED, f"output download failed: {exc}"[:1000], _now(), job_id),
-                db_path=self.db_path,
+                
             )
-            db.add_job_log(job_id, f"execution completed but output download failed: {exc}", db_path=self.db_path)
+            db.add_job_log(job_id, f"execution completed but output download failed: {exc}",)
             return
         meta = _job_meta(job)
         meta["files"] = [str(Path(f).name) for f in files]
         meta["output_dir"] = str(dest)
-        _save_job_meta(job_id, meta, db_path=self.db_path)
+        _save_job_meta(job_id, meta,)
         if job["status"] == config.JOB_STOPPING:
             db.execute(
-                "UPDATE jobs SET status=?, kaggle_status='complete', error='stopped by user', finished_at=? WHERE id=?",
+                "UPDATE jobs SET status=%s, kaggle_status='complete', error='stopped by user', finished_at=%s WHERE id=%s",
                 (config.JOB_CANCELLED, _now(), job_id),
-                db_path=self.db_path,
+                
             )
-            db.add_job_log(job_id, "execution stopped by user — pre-stop outputs preserved", db_path=self.db_path)
+            db.add_job_log(job_id, "execution stopped by user — pre-stop outputs preserved",)
             return
         db.execute(
-            "UPDATE jobs SET status=?, kaggle_status='complete', error='', finished_at=? WHERE id=?",
+            "UPDATE jobs SET status=%s, kaggle_status='complete', error='', finished_at=%s WHERE id=%s",
             (config.JOB_SUCCESS, _now(), job_id),
-            db_path=self.db_path,
+            
         )
-        db.add_job_log(job_id, "execution complete — output saved", db_path=self.db_path)
+        db.add_job_log(job_id, "execution complete — output saved",)
         for f in meta["files"]:
-            db.add_job_log(job_id, f"  output: {f}", db_path=self.db_path)
+            db.add_job_log(job_id, f"  output: {f}",)
 
     # ------------------------------------------------------------- scheduler
 
@@ -319,7 +318,7 @@ class Worker:
         now = datetime.now(timezone.utc)
         rows = db.fetch_all(
             "SELECT * FROM notebooks WHERE enabled=1 AND schedule != ''",
-            db_path=self.db_path,
+            
         )
         for nb in rows:
             try:
@@ -328,31 +327,31 @@ class Worker:
             except ValueError:
                 continue
             active = db.fetch_one(
-                "SELECT 1 FROM jobs WHERE notebook_id=? AND status IN ('queued','running','uncertain') LIMIT 1",
+                "SELECT 1 FROM jobs WHERE notebook_id=%s AND status IN ('queued','running','uncertain') LIMIT 1",
                 (nb["id"],),
-                db_path=self.db_path,
+                
             )
             if active:
                 continue
-            jid = db.enqueue_job(nb["id"], kind="schedule", db_path=self.db_path)
+            jid = db.enqueue_job(nb["id"], kind="schedule",)
             db.execute(
-                "UPDATE jobs SET meta=? WHERE id=?",
+                "UPDATE jobs SET meta=%s WHERE id=%s",
                 (json.dumps({"notebook_title": nb["title"], "notebook_slug": nb["slug"]}), jid),
-                db_path=self.db_path,
+                
             )
-            db.add_job_log(jid, f"scheduled run fired ({nb['schedule']})", db_path=self.db_path)
+            db.add_job_log(jid, f"scheduled run fired ({nb['schedule']})",)
 
 
 # ---------------------------------------------------------------- stop (shared)
 
-def stop_job(facade, job_id: int, db_path=None) -> str:
+def stop_job(facade, job_id: int) -> str:
     """Stop a running job: snapshot outputs, then push an immediate-exit stub.
 
     Used by the API cancel endpoint and the agent tool. The worker keeps
     polling and finalizes the job as cancelled once Kaggle reaches a terminal
     state. Returns a human-readable outcome.
     """
-    job = db.fetch_one("SELECT * FROM jobs WHERE id=?", (int(job_id),), db_path=db_path)
+    job = db.fetch_one("SELECT * FROM jobs WHERE id=%s", (int(job_id),),)
     if not job:
         raise ValueError("job not found")
     if job["status"] not in (config.JOB_RUNNING, config.JOB_STOPPING):
@@ -364,7 +363,7 @@ def stop_job(facade, job_id: int, db_path=None) -> str:
     if not ref:
         raise ValueError("job has no remote reference yet; wait for it to start")
     nb = db.fetch_one(
-        "SELECT * FROM notebooks WHERE id=?", (job.get("notebook_id"),), db_path=db_path
+        "SELECT * FROM notebooks WHERE id=%s", (job.get("notebook_id"),)
     )
     if nb is None:
         nb = {
@@ -376,17 +375,17 @@ def stop_job(facade, job_id: int, db_path=None) -> str:
     dest = config.OUTPUTS_DIR / f"job-{job_id}"
     try:
         facade.download_output(ref, dest, account=account)  # pre-stop snapshot
-        db.add_job_log(job_id, "pre-stop output snapshot saved", db_path=db_path)
+        db.add_job_log(job_id, "pre-stop output snapshot saved",)
     except Exception as exc:
-        db.add_job_log(job_id, f"pre-stop snapshot unavailable: {exc}", db_path=db_path)
+        db.add_job_log(job_id, f"pre-stop snapshot unavailable: {exc}",)
     try:
         facade.stop_notebook(nb, account=account)
     except Exception as exc:
         raise ValueError(f"stop signal failed: {exc}")
     db.execute(
-        "UPDATE jobs SET status=?, kaggle_status='stopping', error='stopping…' WHERE id=?",
+        "UPDATE jobs SET status=%s, kaggle_status='stopping', error='stopping…' WHERE id=%s",
         (config.JOB_STOPPING, job_id),
-        db_path=db_path,
+        
     )
-    db.add_job_log(job_id, "stop signal sent — waiting for Kaggle to finalize", db_path=db_path)
+    db.add_job_log(job_id, "stop signal sent — waiting for Kaggle to finalize",)
     return f"stop signal sent for job {job_id}"

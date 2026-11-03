@@ -8,13 +8,9 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
-    disk:
-      name: kaggle-data
-      mountPath: /data
-      sizeGB: 1
     envVars:
-      - key: DATA_DIR
-        value: /data
+      - key: DATABASE_URL
+        sync: false        # Neon Postgres connection string — durable storage (Render free tier has no persistent disk)
       - key: ADMIN_PASSWORD
         sync: false        # set this in Render dashboard; if unset a random one is generated
       - key: KAGGLE_ACCOUNTS
